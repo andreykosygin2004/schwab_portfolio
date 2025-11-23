@@ -22,6 +22,4 @@ cpi = web.DataReader("CPIAUCSL", "fred", start, end)
 
 # Volatility Data
 vix = yf.download("^VIX", start="2010-01-01", auto_adjust=True)["Close"]
-vix.to_csv("data/vol.csv")
-
-print("Treasury 10Y and CPI downloaded successfully")
+print(vix.columns.tolist())
