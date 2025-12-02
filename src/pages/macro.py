@@ -5,10 +5,9 @@ import plotly.express as px
 
 dash.register_page(__name__, path="/macro", name="Macro Analysis")
 
-vol = pd.read_csv("data/vol.csv", parse_dates=['Date']).set_index('Date')
-treasury = pd.read_csv("data/treasury.csv", parse_dates=['DATE']).set_index('DATE')
-cpi = pd.read_csv("data/cpi.csv", parse_dates=['DATE']).set_index('DATE')
-print(vol.columns.tolist())
+vol = pd.read_csv("data/vol.csv", parse_dates=['Date'], index_col='Date')
+treasury = pd.read_csv("data/treasury.csv", parse_dates=['DATE'], index_col='DATE')
+cpi = pd.read_csv("data/cpi.csv", parse_dates=['DATE'], index_col='DATE')
 
 macro_df = pd.concat([vol, treasury, cpi], axis=1)
 
