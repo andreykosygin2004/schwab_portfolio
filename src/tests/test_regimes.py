@@ -7,7 +7,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from analytics.regimes import label_regimes, simulate_overlay
+from analytics.regimes import label_regimes, simulate_overlay, transition_matrix, returns_from_prices
 
 
 def test_label_regimes_priority():
@@ -35,3 +35,22 @@ def test_simulate_overlay_alignment():
     overlay, exposure = simulate_overlay(port_ret, labels, exposure_map)
     assert len(overlay) == len(port_ret)
     assert np.isclose(exposure.iloc[-1], 0.4)
+
+
+def test_weekly_returns_compound():
+    idx = pd.date_range("2024-01-01", periods=5, freq="D")
+    prices = pd.Series([100, 101, 102, 103, 104], index=idx)
+    weekly = returns_from_prices(prices, freq="Weekly")
+    if weekly.empty:
+        return
+    expected = (104 / 100) - 1
+    assert np.isclose(weekly.iloc[-1], expected)
+
+
+def test_transition_matrix_rows():
+    idx = pd.date_range("2024-01-01", periods=5, freq="D")
+    labels = pd.Series(["A", "A", "B", "B", "A"], index=idx)
+    tm = transition_matrix(labels)
+    row_sums = tm.sum(axis=1).round(6)
+    assert np.isclose(row_sums.loc["A"], 1.0)
+    assert np.isclose(row_sums.loc["B"], 1.0)

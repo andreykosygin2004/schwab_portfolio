@@ -34,25 +34,45 @@ def compute_regime_features(proxy_prices: pd.DataFrame, freq: str) -> pd.DataFra
     features = pd.DataFrame(index=returns.index)
 
     if "SPY" in prices.columns:
-        features["spy_mom_63"] = prices["SPY"].pct_change(63)
-        features["spy_vol_20"] = returns["SPY"].rolling(20).std()
+        mom_window = 63 if freq == "Daily" else 12
+        vol_window = 20 if freq == "Daily" else 12
+        features["spy_mom_63"] = prices["SPY"].pct_change(mom_window)
+        features["spy_vol_20"] = returns["SPY"].rolling(vol_window).std()
     if "QQQ" in prices.columns:
-        features["qqq_mom_63"] = prices["QQQ"].pct_change(63)
+        mom_window = 63 if freq == "Daily" else 12
+        features["qqq_mom_63"] = prices["QQQ"].pct_change(mom_window)
     if "HYG" in prices.columns:
-        features["hyg_mom_21"] = prices["HYG"].pct_change(21)
+        mom_window = 21 if freq == "Daily" else 8
+        features["hyg_mom_21"] = prices["HYG"].pct_change(mom_window)
         features["hyg_dd"] = drawdown_series(prices["HYG"])
     if "TLT" in prices.columns:
-        features["tlt_mom_21"] = prices["TLT"].pct_change(21)
+        mom_window = 21 if freq == "Daily" else 8
+        features["tlt_mom_21"] = prices["TLT"].pct_change(mom_window)
         features["tlt_dd"] = drawdown_series(prices["TLT"])
     if "UUP" in prices.columns:
-        features["uup_mom_21"] = prices["UUP"].pct_change(21)
+        mom_window = 21 if freq == "Daily" else 8
+        features["uup_mom_21"] = prices["UUP"].pct_change(mom_window)
     if "USO" in prices.columns:
-        features["uso_mom_21"] = prices["USO"].pct_change(21)
+        mom_window = 21 if freq == "Daily" else 8
+        features["uso_mom_21"] = prices["USO"].pct_change(mom_window)
     if "TIP" in prices.columns:
-        features["tip_mom_21"] = prices["TIP"].pct_change(21)
+        mom_window = 21 if freq == "Daily" else 8
+        features["tip_mom_21"] = prices["TIP"].pct_change(mom_window)
 
     features = features.dropna(how="all")
     return features
+
+
+def resample_prices(prices: pd.Series | pd.DataFrame, freq: str) -> pd.Series | pd.DataFrame:
+    if freq == "Weekly":
+        return prices.resample("W-FRI").last()
+    return prices
+
+
+def returns_from_prices(prices: pd.Series | pd.DataFrame, freq: str) -> pd.Series | pd.DataFrame:
+    prices = resample_prices(prices, freq)
+    returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
+    return returns
 
 
 def get_thresholds(preset: str) -> dict[str, float]:
@@ -168,4 +188,3 @@ def transition_matrix(labels: pd.Series) -> pd.DataFrame:
             matrix.loc[prev, nxt] += 1
     matrix = matrix.div(matrix.sum(axis=1).replace(0, np.nan), axis=0)
     return matrix.fillna(0.0)
-
