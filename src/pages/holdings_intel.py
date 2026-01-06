@@ -26,6 +26,7 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
 
 layout = html.Div([
+    html.Br(),
     html.H2("Holdings Intelligence"),
     html.P("Analyze concentration, risk contribution, and scenario shocks."),
 

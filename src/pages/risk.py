@@ -46,6 +46,7 @@ GRID_STYLE = {
     "gap": "16px",
 }
 INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
+DEBUG_DRAWDOWN_CHECK = False
 
 
 def _format_pct(value: float) -> str:
@@ -55,6 +56,7 @@ def _format_pct(value: float) -> str:
 
 
 layout = html.Div([
+    html.Br(),
     html.H2("Risk & Drawdowns"),
     html.P(
         "Assess portfolio risk, drawdown behavior, and tail-risk measures across the selected window."
@@ -130,13 +132,13 @@ layout = html.Div([
     dash_table.DataTable(
         id="drawdown-table",
         columns=[
-            {"name": "Start", "id": "start"},
+            {"name": "Peak", "id": "peak"},
             {"name": "Trough", "id": "trough"},
             {"name": "Recovery", "id": "recovery"},
             {"name": "Depth", "id": "depth"},
-            {"name": "Days to Trough", "id": "days_to_trough"},
-            {"name": "Recovery Days", "id": "recovery_days"},
-            {"name": "Total Days", "id": "total_days"},
+            {"name": "Periods to Trough", "id": "periods_to_trough"},
+            {"name": "Periods to Recovery", "id": "periods_to_recovery"},
+            {"name": "Total Periods", "id": "total_periods"},
         ],
         style_table={"overflowX": "auto"},
         style_cell={"textAlign": "left", "padding": "6px"},
@@ -228,18 +230,23 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
 
     episodes = drawdown_episodes(prices_plot)
     episodes = episodes[:10]
+    if DEBUG_DRAWDOWN_CHECK:
+        dd_min = float(dd_series.min()) if not dd_series.empty else np.nan
+        ep_min = min((ep["depth"] for ep in episodes), default=np.nan)
+        if pd.notna(dd_min) and pd.notna(ep_min) and not np.isclose(dd_min, ep_min, atol=1e-6):
+            print(f"[WARN] Drawdown mismatch: series {dd_min:.6f} vs episodes {ep_min:.6f}")
     rows = []
     scatter_rows = []
     for ep in episodes:
         recovery = ep["recovery"]
         rows.append({
-            "start": ep["start"].date().isoformat(),
+            "peak": ep["peak"].date().isoformat(),
             "trough": ep["trough"].date().isoformat(),
             "recovery": recovery.date().isoformat() if recovery is not None else "Unrecovered",
             "depth": _format_pct(ep["depth"]),
-            "days_to_trough": ep["duration_to_trough"],
-            "recovery_days": ep["recovery_time"] if ep["recovery_time"] is not None else "n/a",
-            "total_days": ep["total_duration"],
+            "periods_to_trough": ep["duration_to_trough"],
+            "periods_to_recovery": ep["recovery_time"] if ep["recovery_time"] is not None else "n/a",
+            "total_periods": ep["total_duration"],
         })
         scatter_rows.append({
             "depth": abs(ep["depth"]),
@@ -257,7 +264,7 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
         )
         scatter_fig.update_layout(height=350)
         scatter_fig.update_yaxes(title_text="Depth", tickformat=".1%")
-        scatter_fig.update_xaxes(title_text="Days to Trough")
+        scatter_fig.update_xaxes(title_text="Periods to Trough")
 
     var_alpha = 0.05
     var_95, cvar_95 = var_cvar(port_ret, alpha=var_alpha)

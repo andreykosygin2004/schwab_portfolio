@@ -26,6 +26,7 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
 
 layout = html.Div([
+    html.Br(),
     html.H2("Factor Attribution"),
     html.P(
         "Estimate how macro and benchmark factors explain portfolio returns, and what residual return remains."
@@ -78,6 +79,7 @@ layout = html.Div([
         style_cell={"textAlign": "left", "padding": "6px"},
     ),
 
+    html.Br(),
     html.Br(),
     html.H3("Rolling Betas"),
     dcc.Loading(dcc.Graph(id="rolling-betas-graph")),
