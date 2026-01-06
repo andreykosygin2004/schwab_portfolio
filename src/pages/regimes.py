@@ -149,6 +149,19 @@ layout = html.Div([
     html.Br(),
     html.H3("Overlay Simulator"),
     html.P("Exposure multiplier is applied to portfolio returns by regime."),
+    html.Div([
+        html.Div(id="overlay-exposure-summary", style={"fontWeight": "600"}),
+    ]),
+    dash_table.DataTable(
+        id="overlay-mapping-table",
+        columns=[
+            {"name": "Regime", "id": "regime"},
+            {"name": "Multiplier", "id": "multiplier"},
+            {"name": "Pct of periods", "id": "pct_time"},
+        ],
+        style_table={"overflowX": "auto", "marginBottom": "12px"},
+        style_cell={"textAlign": "left", "padding": "6px"},
+    ),
     dcc.Loading(dcc.Graph(id="overlay-cumret")),
     dcc.Loading(dcc.Graph(id="overlay-drawdown")),
     dcc.Loading(dcc.Graph(id="overlay-te")),
@@ -177,6 +190,8 @@ layout = html.Div([
     Output("overlay-drawdown", "figure"),
     Output("overlay-te", "figure"),
     Output("overlay-summary-table", "data"),
+    Output("overlay-exposure-summary", "children"),
+    Output("overlay-mapping-table", "data"),
     Input("regime-date-range", "start_date"),
     Input("regime-date-range", "end_date"),
     Input("regime-frequency", "value"),
@@ -191,24 +206,24 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
     portfolio = PORTFOLIO_SERIES.loc[start:end].dropna()
     if portfolio.empty:
         empty = empty_figure("No data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
 
     prices = load_proxy_prices(start, end)
     if prices.empty:
         empty = empty_figure("No proxy data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
 
     features = compute_regime_features(prices, freq)
     labels = label_regimes(features, preset)
     labels = labels.reindex(features.index).dropna()
     if labels.empty:
         empty = empty_figure("No regime labels available.")
-        return empty, [], "", empty, empty, empty, empty, empty, []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
 
     equity = portfolio.reindex(labels.index).ffill().dropna()
     if equity.empty:
         empty = empty_figure("No aligned portfolio data.")
-        return empty, [], "", empty, empty, empty, empty, empty, []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
 
     periods = 252 if freq == "Daily" else 52
     port_ret = returns_from_prices(equity, freq=freq)
@@ -340,6 +355,30 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
         },
     ]
 
+    periods_label = "days" if freq == "Daily" else "weeks"
+    avg_exposure = exposure.mean() if not exposure.empty else np.nan
+    exposure_summary = f"Average exposure: {avg_exposure:.2f}x"
+    if len(exposure) < (30 if freq == "Daily" else 12):
+        exposure_summary += f" (sample size {len(exposure)} {periods_label})"
+
+    regime_order = [
+        "Risk-On",
+        "Neutral / Transition",
+        "Rates Shock",
+        "Inflation Shock",
+        "Risk-Off / Credit Stress",
+    ]
+    counts = labels.value_counts().reindex(regime_order).fillna(0.0)
+    total = counts.sum()
+    mapping_rows = []
+    for regime in regime_order:
+        pct = counts.get(regime, 0.0) / total if total > 0 else 0.0
+        mapping_rows.append({
+            "regime": regime,
+            "multiplier": f"{exposure_map.get(regime, 1.0):.2f}x",
+            "pct_time": f"{pct:.1%}",
+        })
+
     return (
         timeline_fig,
         summary_rows,
@@ -350,4 +389,6 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
         overlay_dd_fig,
         te_fig,
         overlay_rows,
+        exposure_summary,
+        mapping_rows,
     )
