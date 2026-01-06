@@ -7,6 +7,8 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from analytics.portfolio import load_portfolio_series as _load_portfolio_series
+
 DATA_DIR = Path("data")
 CACHE_DIR = DATA_DIR / "macro_cache"
 
@@ -72,13 +74,8 @@ def normalize_to_100(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Seri
     return (prices / first) * 100.0
 
 
-def load_portfolio_series(path: str = "data/holdings_timeseries.csv") -> pd.Series:
-    df = pd.read_csv(path, parse_dates=["Date"], index_col="Date").sort_index()
-    if "total_value_clean" in df.columns:
-        return df["total_value_clean"].astype(float)
-    if "total_value" in df.columns:
-        return df["total_value"].astype(float)
-    raise ValueError("No total_value or total_value_clean column in holdings timeseries.")
+def load_portfolio_series() -> pd.Series:
+    return _load_portfolio_series()
 
 
 def load_fred_series(

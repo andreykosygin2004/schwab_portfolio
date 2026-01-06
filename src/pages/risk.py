@@ -16,6 +16,7 @@ from analytics.risk import (
     var_cvar,
 )
 from analytics_macro import load_portfolio_series, load_ticker_prices
+from analytics.portfolio import risk_free_warning
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/risk", name="Risk & Drawdowns")
@@ -58,6 +59,10 @@ def _format_pct(value: float) -> str:
 layout = html.Div([
     html.Br(),
     html.H2("Risk & Drawdowns"),
+    html.Div(
+        risk_free_warning(),
+        style={"color": "#b45309", "marginBottom": "8px"},
+    ) if risk_free_warning() else html.Div(),
     html.P(
         "Assess portfolio risk, drawdown behavior, and tail-risk measures across the selected window."
     ),

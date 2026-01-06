@@ -18,6 +18,7 @@ from analytics_macro import (
     load_fred_series,
     load_ticker_prices,
 )
+from analytics.portfolio import risk_free_warning
 
 dash.register_page(__name__, path="/macro", name="Macro Analysis")
 
@@ -101,6 +102,10 @@ def _ytd_change(series: pd.Series) -> float:
 layout = html.Div([
     html.Br(),
     html.H2("Macro Dashboard"),
+    html.Div(
+        risk_free_warning(),
+        style={"color": "#b45309", "marginBottom": "8px"},
+    ) if risk_free_warning() else html.Div(),
     html.P(
         "Use the controls to frame the macro window, then explore regime metrics, "
         "rates/credit shifts, and exposure diagnostics for the portfolio."

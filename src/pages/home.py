@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from analytics import compute_performance_metrics
+from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/", name="Home")
@@ -13,6 +14,7 @@ prices = pd.read_csv("data/historical_prices.csv", index_col=0, parse_dates=True
 tickers = prices.columns.tolist()
 
 holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
+portfolio_ts = build_portfolio_timeseries()
 mv_options = [{"label": "Portfolio Total", "value": "Portfolio Total"}] + [
     {"label": t, "value": t} for t in tickers]
 
@@ -26,6 +28,10 @@ max_date = holdings_ts.index.max().date().isoformat()
 layout = html.Div([
     html.Br(),
     html.H2("Portfolio Overview"),
+    html.Div(
+        risk_free_warning(),
+        style={"color": "#b45309", "marginBottom": "8px"},
+    ) if risk_free_warning() else html.Div(),
     html.P(
         "Track total portfolio value, clean cash-adjusted value, and individual holdings "
         "over the selected window."
@@ -68,11 +74,11 @@ layout = html.Div([
     html.Hr(),
 
     html.H3([
-        "Portfolio Total (Excluding Negative MoneyLink Transfers - Cash Earns 0%)",
+        "Portfolio Total (Excluding Negative MoneyLink Transfers - Cash Earns Risk-Free)",
         html.Span(" (info)", id="pv-clean-info", style=INFO_STYLE),
     ]),
     dbc.Tooltip(
-        "Removes negative MoneyLink transfers from cash to show performance excluding withdrawals.",
+        "Removes negative MoneyLink transfers from cash; positive idle cash earns a risk-free proxy.",
         target="pv-clean-info",
         placement="right",
     ),
@@ -191,6 +197,7 @@ def update_mv_graph(selected_holdings, start_date, end_date):
         return empty_figure("No holdings selected", height=GRAPH_HEIGHT)
 
     df_slice = holdings_ts.loc[start_date:end_date]
+    portfolio_slice = portfolio_ts.loc[start_date:end_date]
     if df_slice.empty:
         return empty_figure("No data in selected range", height=GRAPH_HEIGHT)
 
@@ -203,7 +210,10 @@ def update_mv_graph(selected_holdings, start_date, end_date):
     if show_portfolio_total:
         # IMPORTANT: portfolio total should include cash, so use total_value
         out = pd.DataFrame(index=df_slice.index)
-        out["Portfolio Total"] = df_slice["total_value"] 
+        if "total_value_rf" in portfolio_slice.columns:
+            out["Portfolio Total"] = portfolio_slice["total_value_rf"]
+        else:
+            out["Portfolio Total"] = df_slice["total_value"]
 
         # Optional: if you also want the selected tickers plotted alongside the total
         if mv_cols:
@@ -238,7 +248,11 @@ def update_portfolio_summary_table(selected_holdings, start_date, end_date):
         return [{"Metric": "error", "Value": "No data in selected range"}]
 
     # 1) Base performance metrics from total_value
-    metrics = compute_performance_metrics(df_slice, price_index_col="total_value")
+    if "total_value_rf" in portfolio_ts.columns:
+        total_series = portfolio_ts.loc[start_date:end_date, "total_value_rf"].dropna()
+        metrics = compute_performance_metrics(total_series.to_frame("total_value_rf"), price_index_col="total_value_rf")
+    else:
+        metrics = compute_performance_metrics(df_slice, price_index_col="total_value")
     rows = metrics_dict_to_rows(metrics)
 
     # 2) Add Top holdings + weights (based on latest MV_ row in the selected range)
@@ -272,15 +286,17 @@ def update_portfolio_summary_table(selected_holdings, start_date, end_date):
 def update_pv_clean_graph_and_metrics(start_date, end_date):
     # Slice by selected range (DatePickerRange gives strings)
     df = holdings_ts.loc[start_date:end_date].copy()
+    portfolio_slice = portfolio_ts.loc[start_date:end_date]
 
     # -------- Graph --------
     if df.empty:
         fig = empty_figure("No data in selected range", height=GRAPH_HEIGHT)
         return fig, []
 
+    series_name = "total_value_clean_rf" if "total_value_clean_rf" in portfolio_slice.columns else "total_value_clean"
     fig = px.line(
-        df,
-        y="total_value_clean",
+        portfolio_slice,
+        y=series_name,
         title="Portfolio Value (Clean)",
     )
     fig.update_layout(
@@ -290,7 +306,13 @@ def update_pv_clean_graph_and_metrics(start_date, end_date):
     )
 
     # -------- Metrics --------
-    metrics_clean = compute_performance_metrics(df, price_index_col="total_value_clean")
+    if "total_value_clean_rf" in portfolio_slice.columns:
+        metrics_clean = compute_performance_metrics(
+            portfolio_slice[[series_name]],
+            price_index_col=series_name,
+        )
+    else:
+        metrics_clean = compute_performance_metrics(df, price_index_col="total_value_clean")
     rows = metrics_dict_to_rows(metrics_clean)
 
     return fig, rows
@@ -327,7 +349,8 @@ def update_rolling_vol_graph(start_date, end_date):
     df = holdings_ts.loc[start_date:end_date].copy()
     if df.empty:
         return empty_figure("No data in selected range", height=GRAPH_HEIGHT)
-    s = df["total_value_clean"].dropna()
+    series_name = "total_value_clean_rf" if "total_value_clean_rf" in portfolio_ts.columns else "total_value_clean"
+    s = portfolio_ts.loc[start_date:end_date, series_name].dropna()
     if s.empty or len(s) < ROLL_VOL_WINDOW + 1:
         return empty_figure("Not enough data for rolling volatility", height=GRAPH_HEIGHT)
     ret = s.pct_change().dropna()

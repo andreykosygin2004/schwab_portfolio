@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from viz.plots import empty_figure
+from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
 
 dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
 
@@ -17,6 +18,7 @@ HOLDINGS_TS = "data/holdings_timeseries.csv"
 BENCHMARKS_CSV = "data/benchmark_prices.csv"
 
 holdings_ts = pd.read_csv(HOLDINGS_TS, parse_dates=["Date"], index_col="Date").sort_index()
+portfolio_ts = build_portfolio_timeseries()
 bench = pd.read_csv(BENCHMARKS_CSV, parse_dates=["Date"], index_col="Date").sort_index()
 
 # Optional risk-free (10y). If not present, use 0.
@@ -94,6 +96,10 @@ benchmark_options = [{"label": c, "value": c} for c in bench.columns]
 layout = html.Div([
     html.Br(),
     html.H2("Benchmarks & Performance"),
+    html.Div(
+        risk_free_warning(),
+        style={"color": "#b45309", "marginBottom": "8px"},
+    ) if risk_free_warning() else html.Div(),
     html.P(
         "Compare portfolio performance against benchmarks, track rolling excess return, "
         "and inspect beta/alpha relationships."
@@ -203,7 +209,10 @@ def _align_series(start_date, end_date, selected_benchmarks):
     end = pd.to_datetime(end_date)
 
     # Portfolio
-    pv = holdings_ts["total_value_clean"].copy()
+    if "total_value_clean_rf" in portfolio_ts.columns:
+        pv = portfolio_ts["total_value_clean_rf"].copy()
+    else:
+        pv = holdings_ts["total_value_clean"].copy()
     pv = pv.loc[start:end]
 
     # Benchmarks (price series)

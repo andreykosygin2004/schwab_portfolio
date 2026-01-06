@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from analytics.factors import align_returns, factor_contributions, fit_ols, rolling_multifactor
 from analytics.risk import compute_returns
 from analytics_macro import load_portfolio_series, load_ticker_prices
+from analytics.portfolio import risk_free_warning
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/factors", name="Factor Attribution")
@@ -28,6 +29,10 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 layout = html.Div([
     html.Br(),
     html.H2("Factor Attribution"),
+    html.Div(
+        risk_free_warning(),
+        style={"color": "#b45309", "marginBottom": "8px"},
+    ) if risk_free_warning() else html.Div(),
     html.P(
         "Estimate how macro and benchmark factors explain portfolio returns, and what residual return remains."
     ),
