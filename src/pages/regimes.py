@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, Input, Output, callback, dash_table
+from dash import html, dcc, Input, Output, callback, dash_table, ctx
 import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
@@ -16,6 +16,12 @@ from analytics.regimes import (
     returns_from_prices,
     simulate_overlay,
     transition_matrix,
+)
+from analytics.overlay import (
+    apply_overlay,
+    compute_overlay_weights,
+    overlay_summary_stats,
+    rolling_beta,
 )
 from analytics.risk import drawdown_series, max_drawdown
 from analytics_macro import load_ticker_prices
@@ -150,6 +156,39 @@ layout = html.Div([
     html.H3("Overlay Simulator"),
     html.P("Exposure multiplier is applied to portfolio returns by regime."),
     html.Div([
+        html.Label("Overlay Preset"),
+        dcc.Dropdown(
+            id="overlay-preset",
+            options=[{"label": p, "value": p} for p in PRESETS],
+            value="Balanced",
+            clearable=False,
+        ),
+    ], style={"maxWidth": "240px"}),
+    html.Div([
+        html.Label("Allow leverage"),
+        dcc.Checklist(
+            id="overlay-leverage",
+            options=[{"label": "Allow leverage", "value": "on"}],
+            value=[],
+            inline=True,
+        ),
+    ]),
+    html.Div([
+        html.Label("Overlay Settings (editable)"),
+        dash_table.DataTable(
+            id="overlay-settings-table",
+            columns=[
+                {"name": "Regime", "id": "regime", "editable": False},
+                {"name": "Target Beta Mult", "id": "beta_mult", "type": "numeric"},
+                {"name": "TLT Tilt", "id": "tlt_tilt", "type": "numeric"},
+                {"name": "GLD Tilt", "id": "gld_tilt", "type": "numeric"},
+            ],
+            editable=True,
+            style_table={"overflowX": "auto", "marginBottom": "12px"},
+            style_cell={"textAlign": "left", "padding": "6px"},
+        ),
+    ]),
+    html.Div([
         html.Div(id="overlay-exposure-summary", style={"fontWeight": "600"}),
     ]),
     dash_table.DataTable(
@@ -164,6 +203,9 @@ layout = html.Div([
     ),
     dcc.Loading(dcc.Graph(id="overlay-cumret")),
     dcc.Loading(dcc.Graph(id="overlay-drawdown")),
+    dcc.Loading(dcc.Graph(id="overlay-weights")),
+    dcc.Loading(dcc.Graph(id="overlay-beta")),
+    dcc.Loading(dcc.Graph(id="overlay-vol")),
     dcc.Loading(dcc.Graph(id="overlay-te")),
     dash_table.DataTable(
         id="overlay-summary-table",
@@ -188,17 +230,24 @@ layout = html.Div([
     Output("regime-dist", "figure"),
     Output("overlay-cumret", "figure"),
     Output("overlay-drawdown", "figure"),
+    Output("overlay-weights", "figure"),
+    Output("overlay-beta", "figure"),
+    Output("overlay-vol", "figure"),
     Output("overlay-te", "figure"),
     Output("overlay-summary-table", "data"),
     Output("overlay-exposure-summary", "children"),
     Output("overlay-mapping-table", "data"),
+    Output("overlay-settings-table", "data"),
     Input("regime-date-range", "start_date"),
     Input("regime-date-range", "end_date"),
     Input("regime-frequency", "value"),
     Input("regime-benchmark", "value"),
     Input("regime-preset", "value"),
+    Input("overlay-preset", "value"),
+    Input("overlay-leverage", "value"),
+    Input("overlay-settings-table", "data"),
 )
-def update_regimes(start_date, end_date, freq, benchmark, preset):
+def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset, overlay_leverage, overlay_table):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     debug = False
@@ -206,24 +255,24 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
     portfolio = PORTFOLIO_SERIES.loc[start:end].dropna()
     if portfolio.empty:
         empty = empty_figure("No data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
 
     prices = load_proxy_prices(start, end)
     if prices.empty:
         empty = empty_figure("No proxy data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
 
     features = compute_regime_features(prices, freq)
     labels = label_regimes(features, preset)
     labels = labels.reindex(features.index).dropna()
     if labels.empty:
         empty = empty_figure("No regime labels available.")
-        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
 
     equity = portfolio.reindex(labels.index).ffill().dropna()
     if equity.empty:
         empty = empty_figure("No aligned portfolio data.")
-        return empty, [], "", empty, empty, empty, empty, empty, [], "", []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
 
     periods = 252 if freq == "Daily" else 52
     port_ret = returns_from_prices(equity, freq=freq)
@@ -288,14 +337,60 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
         dist_fig.update_layout(height=400)
         dist_fig.update_yaxes(tickformat=".1%")
 
-    exposure_map = {
-        "Risk-On": 1.0,
-        "Neutral / Transition": 0.8,
-        "Rates Shock": 0.6,
-        "Inflation Shock": 0.7,
-        "Risk-Off / Credit Stress": 0.4,
+    overlay_defaults = {
+        "Conservative": {
+            "Risk-On": 1.0,
+            "Neutral / Transition": 0.6,
+            "Rates Shock": 0.4,
+            "Inflation Shock": 0.5,
+            "Risk-Off / Credit Stress": 0.2,
+        },
+        "Balanced": {
+            "Risk-On": 1.0,
+            "Neutral / Transition": 0.7,
+            "Rates Shock": 0.5,
+            "Inflation Shock": 0.6,
+            "Risk-Off / Credit Stress": 0.3,
+        },
+        "Aggressive": {
+            "Risk-On": 1.0,
+            "Neutral / Transition": 0.8,
+            "Rates Shock": 0.6,
+            "Inflation Shock": 0.7,
+            "Risk-Off / Credit Stress": 0.4,
+        },
     }
-    overlay_ret, exposure = simulate_overlay(port_ret, labels, exposure_map)
+    regime_order = [
+        "Risk-On",
+        "Neutral / Transition",
+        "Rates Shock",
+        "Inflation Shock",
+        "Risk-Off / Credit Stress",
+    ]
+    if ctx.triggered_id == "overlay-preset" or not overlay_table:
+        overlay_table = [
+            {"regime": r, "beta_mult": overlay_defaults[overlay_preset][r], "tlt_tilt": 0.0, "gld_tilt": 0.0}
+            for r in regime_order
+        ]
+
+    config = {
+        "target_beta_mult": {row["regime"]: float(row.get("beta_mult", 1.0)) for row in overlay_table},
+        "tlt_tilt": {row["regime"]: float(row.get("tlt_tilt", 0.0)) for row in overlay_table},
+        "gld_tilt": {row["regime"]: float(row.get("gld_tilt", 0.0)) for row in overlay_table},
+        "max_hedge": 1.0,
+        "gross_cap": 1.5,
+        "allow_leverage": "on" in (overlay_leverage or []),
+    }
+
+    proxy_prices = load_ticker_prices(["QQQ", "TLT", "GLD"], start=start, end=end)
+    qqq_ret = returns_from_prices(proxy_prices["QQQ"], freq=freq) if "QQQ" in proxy_prices.columns else pd.Series(dtype=float)
+    tlt_ret = returns_from_prices(proxy_prices["TLT"], freq=freq) if "TLT" in proxy_prices.columns else pd.Series(dtype=float)
+    gld_ret = returns_from_prices(proxy_prices["GLD"], freq=freq) if "GLD" in proxy_prices.columns else pd.Series(dtype=float)
+    beta_window = 63 if freq == "Daily" else 26
+    beta_series = rolling_beta(port_ret, qqq_ret, beta_window).ffill()
+    weights = compute_overlay_weights(labels, beta_series, config)
+    overlay_ret = apply_overlay(port_ret, qqq_ret, tlt_ret, gld_ret, weights)
+    exposure = labels.map(lambda x: config["target_beta_mult"].get(x, 1.0)).reindex(port_ret.index).fillna(1.0)
     base_cum = (1 + port_ret).cumprod() - 1
     overlay_cum = (1 + overlay_ret).cumprod() - 1
 
@@ -361,13 +456,6 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
     if len(exposure) < (30 if freq == "Daily" else 12):
         exposure_summary += f" (sample size {len(exposure)} {periods_label})"
 
-    regime_order = [
-        "Risk-On",
-        "Neutral / Transition",
-        "Rates Shock",
-        "Inflation Shock",
-        "Risk-Off / Credit Stress",
-    ]
     counts = labels.value_counts().reindex(regime_order).fillna(0.0)
     total = counts.sum()
     mapping_rows = []
@@ -375,8 +463,42 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
         pct = counts.get(regime, 0.0) / total if total > 0 else 0.0
         mapping_rows.append({
             "regime": regime,
-            "multiplier": f"{exposure_map.get(regime, 1.0):.2f}x",
+            "multiplier": f"{config['target_beta_mult'].get(regime, 1.0):.2f}x",
             "pct_time": f"{pct:.1%}",
+        })
+
+    weights_fig = empty_figure("No overlay weights.")
+    if not weights.empty:
+        weights_fig = px.line(weights, title="Overlay Weights Over Time")
+        weights_fig.update_layout(height=420, legend_title_text="")
+
+    beta_fig = empty_figure("No beta data.")
+    overlay_beta = rolling_beta(overlay_ret, qqq_ret, beta_window)
+    if not overlay_beta.empty:
+        beta_fig = go.Figure()
+        beta_fig.add_trace(go.Scatter(x=beta_series.index, y=beta_series.values, name="Baseline Beta"))
+        beta_fig.add_trace(go.Scatter(x=overlay_beta.index, y=overlay_beta.values, name="Overlay Beta"))
+        beta_fig.update_layout(title="Rolling Beta to QQQ", height=420, legend_title_text="")
+
+    vol_fig = empty_figure("No volatility data.")
+    if not port_ret.empty:
+        roll_window = 63 if freq == "Daily" else 26
+        base_vol = port_ret.rolling(roll_window).std() * np.sqrt(periods)
+        overlay_vol = overlay_ret.rolling(roll_window).std() * np.sqrt(periods)
+        vol_fig = go.Figure()
+        vol_fig.add_trace(go.Scatter(x=base_vol.index, y=base_vol.values, name="Baseline Vol"))
+        vol_fig.add_trace(go.Scatter(x=overlay_vol.index, y=overlay_vol.values, name="Overlay Vol"))
+        vol_fig.update_layout(title="Rolling Volatility", height=420, legend_title_text="")
+        vol_fig.update_yaxes(tickformat=".1%")
+
+    diag = overlay_summary_stats(port_ret, overlay_ret, weights, qqq_ret, periods, beta_window)
+    if diag:
+        overlay_rows.append({
+            "series": "Overlay Diagnostics",
+            "ann_return": f"Avg hedge {diag['avg_hedge']:.2f}",
+            "ann_vol": f"Max hedge {diag['max_hedge']:.2f}",
+            "max_dd": f"% hedged {diag['pct_hedged']:.1%}",
+            "sharpe": f"Avg beta {diag['avg_beta']:.2f}",
         })
 
     return (
@@ -387,8 +509,12 @@ def update_regimes(start_date, end_date, freq, benchmark, preset):
         dist_fig,
         overlay_cum_fig,
         overlay_dd_fig,
+        weights_fig,
+        beta_fig,
+        vol_fig,
         te_fig,
         overlay_rows,
         exposure_summary,
         mapping_rows,
+        overlay_table,
     )
