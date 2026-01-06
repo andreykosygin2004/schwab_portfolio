@@ -99,6 +99,7 @@ def _ytd_change(series: pd.Series) -> float:
 
 
 layout = html.Div([
+    html.Br(),
     html.H2("Macro Dashboard"),
     html.P(
         "Use the controls to frame the macro window, then explore regime metrics, "
@@ -148,7 +149,7 @@ layout = html.Div([
     html.Br(),
     html.H3("Macro Regime Overview"),
     html.Div([
-        html.Span("What do these metrics mean?", id="macro-regime-info", style=INFO_STYLE),
+        html.Span(id="macro-regime-info", style=INFO_STYLE),
         dbc.Tooltip(
             "Rolling volatility, correlation, and beta use the selected frequency and window. "
             "Max drawdown is the worst peak-to-trough decline over the window.",
@@ -180,6 +181,7 @@ layout = html.Div([
     ], style=GRID_STYLE),
 
     html.Br(),
+    html.Br(),
     html.H3("Rates / Inflation / Credit"),
     html.P(
         "Normalized indices show how rates, inflation, and credit proxies have moved together. "
@@ -199,6 +201,7 @@ layout = html.Div([
         style_cell={"textAlign": "left", "padding": "6px"},
     ),
 
+    html.Br(),
     html.Br(),
     html.H3("Commodities / USD / Risk Sentiment"),
     html.P(

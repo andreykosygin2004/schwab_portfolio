@@ -25,7 +25,6 @@ max_date = holdings_ts.index.max().date().isoformat()
 
 layout = html.Div([
     html.Br(),
-    html.Br(),
     html.H2("Portfolio Overview"),
     html.P(
         "Track total portfolio value, clean cash-adjusted value, and individual holdings "
