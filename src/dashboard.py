@@ -1,5 +1,5 @@
 import dash
-from dash import Dash
+from dash import Dash, html
 import dash_bootstrap_components as dbc
 
 # Initialize app
@@ -20,8 +20,8 @@ app.layout = dbc.Container([
         dark=True,
         children=nav_links
     ),
-    dash.page_container,
-], fluid=True)
+    html.Div(dash.page_container, className="page-container"),
+], fluid=True, className="app-shell")
 
 # Run app
 if __name__ == "__main__":

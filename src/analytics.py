@@ -1,9 +1,6 @@
-import os
 from pathlib import Path
-import re
 import pandas as pd
 import numpy as np
-from datetime import datetime
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -11,28 +8,52 @@ DATA_DIR = PROJECT_ROOT / "data"
 # CONFIG
 TRANSACTIONS_CSV = DATA_DIR / "schwab_transactions.csv"
 PRICES_CSV = DATA_DIR / "historical_prices.csv"
+STOCK_SPLITS_CSV = DATA_DIR / "stock_splits.csv"
 OUTPUT_HOLDINGS_TS = DATA_DIR / "holdings_timeseries.csv"
 OUTPUT_SUMMARY = DATA_DIR / "portfolio_summary.csv"
 
 STARTING_CASH = 0.0
-KNOWN_SPLITS = {
-    ("FCEL", pd.Timestamp("2024-11-11")): 1/30  # 1-for-30 reverse split
+
+SYMBOL_ALIAS = {
+    "35952H601": "FCEL"
 }
 
 # -----------------------
-# Cleaning and Structure
+# Loading
 # -----------------------
 
-def safe_read_csv(path: Path):
+def safe_read_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"{path} not found.")
     return pd.read_csv(path)
 
+def load_splits(path: Path) -> dict[tuple[str, pd.Timestamp], float]:
+    if not Path(path).exists():
+        return {}
+    df = pd.read_csv(path, parse_dates=["date"])
+    mapping = {}
+    for _, r in df.iterrows():
+        sym = str(r["Ticker"]).upper()
+        dt = pd.to_datetime(r["date"]).normalize()
+        mapping[(sym, dt)] = float(r["split_ratio"])
+    return mapping
+
+SPLIT_MAP = load_splits(STOCK_SPLITS_CSV)
+
+# ---------------------------
+# Cleaning and Classification
+# ---------------------------
+
 def classify_action(action: str, description: str) -> str:
     """Map Schwab Action + Description into canonical action types."""
     a = (str(action) + " " + str(description)).lower()
-    raw_action = str(action)
+    raw_action = str(action).strip()
 
+    if "reverse split" in a or raw_action.lower() == "reverse split":
+        return "REVERSE_SPLIT"
+    if "stock split" in a or ("split" in a and "reverse" not in a):
+        return "SPLIT"
+    
     if raw_action == "Buy":
         if "reinvest" in a or "drip" in a:
             return "DIVIDEND_REINVEST"
@@ -98,16 +119,86 @@ def normalize_transactions(df: pd.DataFrame) -> pd.DataFrame:
         df["Symbol"] = df["Symbol"].astype(str).str.strip().replace({"nan": np.nan})
         df.loc[df["Symbol"].notna(), "Symbol"] = df.loc[df["Symbol"].notna(), "Symbol"].str.upper()
 
-    # Apply classification (CRITICAL STEP)
+    # Apply classification
+    if "Action" not in df.columns:
+        df["Action"] = ""
+    if "Description" not in df.columns:
+        df["Description"] = ""
     df["ActionType"] = df.apply(lambda r: classify_action(r["Action"], r["Description"]), axis=1)
 
     return df
+
+def compute_clean_cash_balance(transactions: pd.DataFrame, index: pd.DatetimeIndex) -> pd.Series:
+    """
+    Rebuild cash balance excluding negative MoneyLink Transfers (withdrawals),
+    but keeping deposits (+ MoneyLink) and all other cash impacts (buys/sells/div/fees/interest).
+    """
+    tx = transactions.copy()
+
+    # Ensure Date is datetime
+    tx["Date"] = pd.to_datetime(tx["Date"], errors="coerce")
+    tx = tx.dropna(subset=["Date"])
+
+    # Ensure numeric Amount
+    if "Amount" in tx.columns:
+        tx["Amount"] = (
+            tx["Amount"]
+            .astype(str)
+            .str.replace(r"[\$,]", "", regex=True)
+            .str.replace(r"^\((.*)\)$", r"-\1", regex=True)
+        )
+        tx["Amount"] = pd.to_numeric(tx["Amount"], errors="coerce").fillna(0.0)
+    else:
+        tx["Amount"] = 0.0
+
+    # Ensure ActionType exists
+    if "ActionType" not in tx.columns:
+        tx["ActionType"] = tx.apply(lambda r: classify_action(r.get("Action", ""), r.get("Description", "")), axis=1)
+
+    # IMPORTANT: your classify_action returns "TRANSFER" for MoneyLink Transfer
+    # so we must identify MoneyLink transfers via raw Action too (most robust)
+    is_moneylink = tx["Action"].astype(str).str.strip().eq("MoneyLink Transfer")
+
+    # Remove ONLY negative MoneyLink transfers (withdrawals)
+    neg_withdraw_mask = is_moneylink & (tx["Amount"] < 0)
+    tx.loc[neg_withdraw_mask, "Amount"] = 0.0
+
+    # Recompute clean cash balance
+    cash_clean = tx.groupby("Date")["Amount"].sum().cumsum()
+    cash_clean = cash_clean.reindex(index).ffill().fillna(0.0)
+
+    return cash_clean
+
+
+def future_split_factor(sym: str, trade_date: pd.Timestamp, split_map: dict) -> float:
+    """
+    Convert raw Schwab quantities into *adjusted-share* quantities compatible with
+    auto_adjust=True prices.
+
+    If a stock has a forward split AFTER the trade_date, adjusted prices will be smaller
+    by the split ratio, so we need MORE shares to keep MV consistent.
+      - forward split ratio > 1  => factor multiplies up
+      - reverse split ratio < 1  => factor multiplies down
+    """
+    sym = str(sym).upper()
+    trade_date = pd.to_datetime(trade_date).normalize()
+
+    factor = 1.0
+    # Multiply all splits that occur AFTER the trade date
+    for (ticker, split_date), ratio in split_map.items():
+        if ticker == sym and split_date > trade_date:
+            factor *= float(ratio)
+    return factor
 
 # -------------------
 # Pipeline Functions
 # -------------------
 
-def build_positions_timeseries(transactions: pd.DataFrame, prices: pd.DataFrame, starting_cash: float = STARTING_CASH, known_splits: dict = KNOWN_SPLITS):
+def build_positions_timeseries(
+    transactions: pd.DataFrame,
+    prices: pd.DataFrame,
+    starting_cash: float = STARTING_CASH,
+) -> tuple[pd.DataFrame, pd.Series]:
     """
     Build daily holdings and cash balance using an explicit chronological simulation.
     Relies on ADJUSTED prices, therefore split transactions only affect cash flow, not holdings.
@@ -124,49 +215,68 @@ def build_positions_timeseries(transactions: pd.DataFrame, prices: pd.DataFrame,
     
     # 2. Simulation (Iterrows is retained for strict chronological cash flow and holdings state)
     for date, df_date in tr.groupby("Date"):
+        date_norm = pd.to_datetime(date).normalize()
         for _, row in df_date.iterrows():
             typ = row.get("ActionType", "OTHER")
-            sym = row.get("Symbol", np.nan)
-            qty = float(row.get("Quantity", 0.0)) if pd.notna(row.get("Quantity")) else 0.0
-            amt = float(row.get("Amount", 0.0)) if pd.notna(row.get("Amount")) else 0.0
+            raw_sym = row.get("Symbol", np.nan)
 
-            # Only actions affecting share count need an update here
-            if typ in ["BUY", "DIVIDEND_REINVEST"]:
-                if pd.notna(sym):
-                    holdings[sym] = holdings.get(sym, 0.0) + qty
-                cash_balance += amt # Negative amount for cash outflow/cost
+            # normalize symbol/alias
+            sym = SYMBOL_ALIAS.get(raw_sym, raw_sym)
+            sym = str(sym).upper() if pd.notna(sym) else np.nan
+
+            qty = float(row.get("Quantity")) if pd.notna(row.get("Quantity")) else 0.0
+            amt = float(row.get("Amount")) if pd.notna(row.get("Amount")) else 0.0
+
+            # ---- Trades & reinvestments (adjust qty using future split factor) ----
+            if typ in ("BUY", "DIVIDEND_REINVEST"):
+                if pd.notna(sym) and sym != "NAN":
+                    adj_factor = future_split_factor(sym, date_norm, SPLIT_MAP)
+                    qty_adj = qty * adj_factor
+                    holdings[sym] = holdings.get(sym, 0.0) + qty_adj
+                # cash outflow usually negative already
+                cash_balance += amt
+
             elif typ == "SELL":
-                if pd.notna(sym):
-                    holdings[sym] = holdings.get(sym, 0.0) - qty
-                cash_balance += amt # Positive amount for cash inflow
+                if pd.notna(sym) and sym != "NAN":
+                    adj_factor = future_split_factor(sym, date_norm, SPLIT_MAP)
+                    qty_adj = qty * adj_factor
+                    holdings[sym] = holdings.get(sym, 0.0) - qty_adj
+                # cash inflow usually positive already
+                cash_balance += amt
+
+            # ---- Transfers ----
             elif typ == "TRANSFER":
-                if pd.isna(sym):
-                    cash_balance += amt # Cash-only transfer
+                # cash-only transfer
+                if pd.isna(sym) or sym == "NAN":
+                    cash_balance += amt
                 else:
-                    # Stock transfer
-                    if amt < 0 or qty < 0:
-                        holdings[sym] = holdings.get(sym, 0.0) - abs(qty)
+                    # stock transfer: if you ever have these, you likely want them to reflect share movement.
+                    # Use qty sign if present; otherwise use amt sign.
+                    if qty != 0:
+                        # Assume qty is already share-count (Schwab transfer rows may be raw; apply split factor just in case)
+                        adj_factor = future_split_factor(sym, date_norm, SPLIT_MAP)
+                        qty_adj = qty * adj_factor
+                        holdings[sym] = holdings.get(sym, 0.0) + qty_adj
                     else:
-                        holdings[sym] = holdings.get(sym, 0.0) + abs(qty)
+                        # no qty info, nothing to do for shares
+                        pass
+                    cash_balance += amt
+
+            # ---- Cash flows ----
             elif typ == "CASH_DIVIDEND" or typ in ("FEE", "INTEREST"):
                 cash_balance += amt
-            elif typ in ["Stock Split"]:
-                holdings[sym] = holdings.get(sym, 0.0) + qty
+
+            # ---- Splits: IGNORE for holdings (handled via adjusted qty at trade time) ----
+            elif typ in ("SPLIT", "REVERSE_SPLIT"):
+                # Optional: cash-in-lieu sometimes appears here
                 cash_balance += amt
-            elif typ in ["Reverse Split"]:
-                if pd.notna(sym) and sym == "FCEL":
-                    key = (sym, date)
-                    if key in KNOWN_SPLITS:
-                        split_ratio = KNOWN_SPLITS[key]
-                        holdings[sym] = holdings.get(sym, 0.0) * float(split_ratio)
-                        cash_balance += amt
-                else:
-                    pass
+
+            # ---- Default: apply any cash impact, do not change holdings ----
             else:
-                cash_balance += amt # Default cash impact
+                cash_balance += amt
         
         # Snapshot after processing this date
-        snapshots.append((date, holdings.copy(), cash_balance))
+        snapshots.append((date_norm, holdings.copy(), cash_balance))
     
     # 3. Vectorization and Reindexing
     if not snapshots:
@@ -191,10 +301,15 @@ def build_positions_timeseries(transactions: pd.DataFrame, prices: pd.DataFrame,
     for col in prices.columns:
         if col not in holdings_df.columns:
             holdings_df[col] = 0.0
+    holdings_df = holdings_df[sorted(holdings_df.columns)]
             
     return holdings_df, cash_ts
 
-def compute_portfolio_valuation(holdings_ts: pd.DataFrame, prices: pd.DataFrame, cash_ts: pd.Series):
+def compute_portfolio_valuation(
+    holdings_ts: pd.DataFrame,
+    prices: pd.DataFrame,
+    cash_ts: pd.Series,
+) -> pd.DataFrame:
     """
     Multiply holdings by price (assumed Adjusted Close) to get market values, add cash balance.
     """
@@ -223,7 +338,8 @@ def compute_portfolio_valuation(holdings_ts: pd.DataFrame, prices: pd.DataFrame,
     
     return df
 
-def compute_performance_metrics(ts: pd.DataFrame, price_index_col="total_value"):
+def compute_performance_metrics(ts: pd.DataFrame, price_index_col: str = "total_value") -> dict[str, float]:
+    """Compute return, risk, and drawdown metrics for a price/value series."""
     s = ts[price_index_col].dropna()
     if s.empty:
         return {}
@@ -244,13 +360,13 @@ def compute_performance_metrics(ts: pd.DataFrame, price_index_col="total_value")
     max_drawdown = float(drawdown.min())
 
     metrics = {
-        "latest_value": latest,
-        "first_value": first,
-        "total_return": total_return,
-        "cagr": cagr,
-        "annual_vol": annual_vol,
-        "sharpe": sharpe,
-        "max_drawdown": max_drawdown
+        "Latest Value": latest,
+        "First Value": first,
+        "Total Return": total_return,
+        "CAGR": cagr,
+        "Annual Vol": annual_vol,
+        "Sharpe Ratio": sharpe,
+        "Max Drawdown": max_drawdown
     }
     return metrics
 
@@ -288,6 +404,9 @@ def run_pipeline():
 
     print("Computing portfolio valuation...")
     valuation_df = compute_portfolio_valuation(holdings_ts, prices, cash_ts)
+    cash_balance_clean = compute_clean_cash_balance(transactions, valuation_df.index)
+    valuation_df["cash_balance_clean"] = cash_balance_clean
+    valuation_df["total_value_clean"] = valuation_df["portfolio_value"] + valuation_df["cash_balance_clean"]
     
     # Trim valuation_df to start exactly at the first transaction date
     valuation_df = valuation_df.loc[valuation_df.index >= first_txn_date]
@@ -315,7 +434,7 @@ def run_pipeline():
 
     # Prepare summary
     summary = metrics.copy()
-    summary["as_of"] = pd.Timestamp.today().strftime("%Y-%m-%d")
+    summary["As of"] = pd.Timestamp.today().strftime("%Y-%m-%d")
     # top holdings
     mv_cols = [c for c in valuation_df.columns if c.startswith("MV_")]
     if mv_cols:
@@ -330,8 +449,8 @@ def run_pipeline():
             if i >= 5:
                 break
             name = col.replace("MV_", "")
-            summary[f"top_{i+1}"] = name
-            summary[f"top_{i+1}_weight"] = float(w)
+            summary[f"Top {i+1}"] = name
+            summary[f"Top {i+1} Weight"] = float(w)
 
     print(f"Saving portfolio summary to {OUTPUT_SUMMARY}")
     pd.Series(summary).to_csv(OUTPUT_SUMMARY)
