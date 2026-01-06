@@ -58,7 +58,7 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
-    html.H3("Holdings Attribution"),
+    html.H3("Holdings Attribution (Snapshot)"),
     html.Div(id="attr-holdings-warning", style={"color": "#b45309", "marginBottom": "6px"}),
     dcc.Loading(dcc.Graph(id="attr-holdings-bar")),
     dash_table.DataTable(
@@ -75,7 +75,8 @@ layout = html.Div([
     ),
 
     html.Br(),
-    html.H3("Factor Attribution"),
+    html.H3("Top Factor Drivers (Selected Window)"),
+    html.P("Period-focused factors; monthly aggregation over the selected window."),
     dcc.Loading(dcc.Graph(id="attr-factor-bars")),
     dcc.Loading(dcc.Graph(id="attr-factor-cum")),
 
@@ -168,7 +169,7 @@ def update_attribution(start_date, end_date, freq, top_n):
         contrib_df = factor_period_contributions(betas, factor_ret)
         if not contrib_df.empty:
             contrib_m = contrib_df.resample("M").sum()
-            factor_bars = px.bar(contrib_m, title="Factor Contributions (Monthly)")
+            factor_bars = px.bar(contrib_m, title="Top Factor Drivers (Monthly, Window)")
             factor_bars.update_layout(barmode="relative", height=420)
             factor_bars.update_yaxes(tickformat=".1%")
             explained = contrib_df.sum(axis=1)
@@ -178,7 +179,7 @@ def update_attribution(start_date, end_date, freq, top_n):
             cum_resid = (1 + residual).cumprod() - 1
             factor_cum = px.line(
                 pd.DataFrame({"Total": cum_total, "Explained": cum_explained, "Residual": cum_resid}),
-                title="Cumulative Explained vs Residual",
+                title="Cumulative Explained vs Residual (Window)",
             )
             factor_cum.update_layout(height=420)
             factor_cum.update_yaxes(tickformat=".1%")

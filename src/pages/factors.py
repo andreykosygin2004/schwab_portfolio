@@ -90,7 +90,8 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="rolling-betas-graph")),
 
     html.Br(),
-    html.H3("Factor Contributions"),
+    html.H3("Model-based Factor Contributions"),
+    html.P("Explained return by factor (monthly aggregation) from the multi-factor model."),
     dcc.Loading(dcc.Graph(id="factor-contrib-graph")),
     dcc.Loading(dcc.Graph(id="residual-graph")),
 
@@ -175,7 +176,7 @@ def update_factor_page(start_date, end_date, freq, factors):
         contrib_resampled = contrib.resample("M").sum()
         contrib_fig = px.bar(
             contrib_resampled,
-            title="Factor Contribution to Returns (Monthly)",
+            title="Model-based Factor Contribution (Monthly, Explained Return)",
             labels={"value": "Contribution", "index": "Date"},
         )
         contrib_fig.update_layout(barmode="relative", height=450)
@@ -187,7 +188,7 @@ def update_factor_page(start_date, end_date, freq, factors):
         residual_fig = go.Figure()
         residual_fig.add_trace(go.Scatter(x=residual.index, y=residual.values, name="Residual"))
         residual_fig.add_trace(go.Scatter(x=cumulative_residual.index, y=cumulative_residual.values, name="Cumulative Residual"))
-        residual_fig.update_layout(title="Residual Return (Daily/Weekly) and Cumulative Residual", height=450, legend_title_text="")
+        residual_fig.update_layout(title="Model Residual (Period) and Cumulative Residual", height=450, legend_title_text="")
         residual_fig.update_yaxes(tickformat=".1%")
 
     stability_fig = empty_figure("Not enough data for stability diagnostics.")

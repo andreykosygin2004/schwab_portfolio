@@ -160,7 +160,7 @@ layout = html.Div([
 
     # 2) Rolling Excess Return
     html.Div([
-        html.Span("Rolling Excess Return", id="rolling-excess-info", style={"cursor": "pointer", "textDecoration": "underline"}),
+        html.Span("Rolling Excess Return (Portfolio vs Benchmark)", id="rolling-excess-info", style={"cursor": "pointer", "textDecoration": "underline"}),
         dbc.Tooltip(
             "Annualized average return difference between portfolio and benchmark over the rolling window.",
             target="rolling-excess-info",
@@ -173,7 +173,7 @@ layout = html.Div([
 
     # 2b) Tracking Error + Information Ratio
     html.Div([
-        html.Span("Tracking Error & Information Ratio", id="tracking-info", style={"cursor": "pointer", "textDecoration": "underline"}),
+        html.Span("Tracking Error & Information Ratio (Portfolio vs Benchmark)", id="tracking-info", style={"cursor": "pointer", "textDecoration": "underline"}),
         dbc.Tooltip(
             "Tracking error is annualized std dev of excess returns; info ratio is annualized excess return divided by tracking error.",
             target="tracking-info",

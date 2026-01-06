@@ -24,6 +24,7 @@ from analytics.overlay import (
     rolling_beta,
 )
 from analytics.risk import drawdown_series, max_drawdown
+from analytics.common import annualize_return_cagr, annualize_vol
 from analytics_macro import load_ticker_prices
 from viz.plots import empty_figure
 
@@ -57,8 +58,8 @@ def _perf_summary(returns: pd.Series, periods: int) -> dict:
             "win_rate": np.nan,
             "avg_return": np.nan,
         }
-    ann_return = (1 + returns).prod() ** (periods / len(returns)) - 1 if len(returns) > 0 else np.nan
-    ann_vol = returns.std() * np.sqrt(periods)
+    ann_return = annualize_return_cagr(returns, periods)
+    ann_vol = annualize_vol(returns, periods)
     sharpe = ann_return / ann_vol if ann_vol > 0 else np.nan
     win_rate = (returns > 0).mean()
     max_dd = max_drawdown((1 + returns).cumprod())
@@ -149,12 +150,12 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="regime-transition")),
 
     html.Br(),
-    html.H3("Regime Return Distribution"),
+    html.H3("Regime Return Distribution (Same Frequency)"),
     dcc.Loading(dcc.Graph(id="regime-dist")),
 
     html.Br(),
     html.H3("Overlay Simulator"),
-    html.P("Exposure multiplier is applied to portfolio returns by regime."),
+    html.P("Overlay is simulated only. Charts below compare baseline vs overlay and benchmark-relative metrics."),
     html.Div([
         html.Label("Overlay Preset"),
         dcc.Dropdown(

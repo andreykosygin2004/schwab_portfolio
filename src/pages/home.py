@@ -111,7 +111,7 @@ layout = html.Div([
 
     html.Br(),
     html.H3([
-        f"Rolling Portfolio Volatility ({ROLL_VOL_WINDOW}D)",
+        f"Rolling Portfolio Volatility (Baseline, {ROLL_VOL_WINDOW}D)",
         html.Span(" (info)", id="rolling-vol-info", style=INFO_STYLE),
     ]),
     dbc.Tooltip(
@@ -122,7 +122,7 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="pv-rolling-vol-graph")),
 
     html.Br(),
-    html.H3("Top Contributors to Return"),
+    html.H3("Top Contributors (Snapshot)"),
     html.P("Approximate contribution = start weight × holding return over the selected window."),
     dcc.Loading(dcc.Graph(id="top-contrib-graph")),
 
@@ -355,7 +355,7 @@ def update_rolling_vol_graph(start_date, end_date):
         return empty_figure("Not enough data for rolling volatility", height=GRAPH_HEIGHT)
     ret = s.pct_change().dropna()
     vol = ret.rolling(ROLL_VOL_WINDOW).std() * np.sqrt(252)
-    fig = px.line(vol, title=f"Rolling Volatility ({ROLL_VOL_WINDOW}D)")
+    fig = px.line(vol, title=f"Rolling Volatility (Baseline, {ROLL_VOL_WINDOW}D)")
     fig.update_layout(height=GRAPH_HEIGHT, legend_title_text="")
     fig.update_yaxes(title_text="Annualized Volatility", tickformat=".1%")
     fig.update_xaxes(title_text="Date")
