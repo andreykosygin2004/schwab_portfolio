@@ -13,6 +13,7 @@ HOLDINGS_TS = DATA_DIR / "holdings_timeseries.csv"
 TREASURY_CSV = DATA_DIR / "treasury.csv"
 
 _RF_WARNING = None
+_RF_SOURCE = "unknown"
 
 
 def load_holdings_timeseries() -> pd.DataFrame:
@@ -23,9 +24,18 @@ def risk_free_warning() -> str | None:
     return _RF_WARNING
 
 
+def risk_free_source() -> str:
+    return _RF_SOURCE
+
+
 def _set_rf_warning(message: str | None) -> None:
     global _RF_WARNING
     _RF_WARNING = message
+
+
+def _set_rf_source(source: str) -> None:
+    global _RF_SOURCE
+    _RF_SOURCE = source
 
 
 @lru_cache(maxsize=4)
@@ -64,6 +74,7 @@ def load_risk_free_returns(index: pd.DatetimeIndex, freq: str) -> pd.Series:
         rf_annual = treasury_yield / 100.0
         rf_return = (1.0 + rf_annual).pow(1.0 / periods) - 1.0
         rf_return = rf_return.reindex(index).ffill().fillna(0.0)
+        _set_rf_source("treasury")
         _set_rf_warning(None)
         return rf_return
 
@@ -74,12 +85,21 @@ def load_risk_free_returns(index: pd.DatetimeIndex, freq: str) -> pd.Series:
         proxy = proxy_prices.iloc[:, 0]
         rf_return = proxy.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
         rf_return = rf_return.reindex(index).ffill().fillna(0.0)
+        _set_rf_source(f"proxy:{proxy.name}")
         _set_rf_warning(None)
         return rf_return
 
+    _set_rf_source("fallback:zero")
     _set_rf_warning("Risk-free unavailable; cash assumed 0%.")
     warnings.warn("[WARN] Risk-free unavailable; cash assumed 0%.")
     return pd.Series(0.0, index=index)
+
+
+def risk_free_info(index: pd.DatetimeIndex, freq: str) -> dict:
+    rf = load_risk_free_returns(index, freq)
+    non_zero = bool((rf != 0).any())
+    last = float(rf.dropna().iloc[-1]) if not rf.dropna().empty else 0.0
+    return {"source": _RF_SOURCE, "non_zero": non_zero, "last_return": last}
 
 
 def accrue_cash_balance(cash_balance: pd.Series, rf_returns: pd.Series) -> pd.Series:
