@@ -70,8 +70,11 @@ def max_drawdown(price_series: pd.Series) -> tuple[float, pd.Series]:
 def normalize_to_100(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
     if prices.empty:
         return prices
-    first = prices.iloc[0]
-    return (prices / first) * 100.0
+    if isinstance(prices, pd.Series):
+        first_valid = prices.dropna().iloc[0] if prices.dropna().size else np.nan
+        return (prices / first_valid) * 100.0 if pd.notna(first_valid) else prices
+    first_vals = prices.apply(lambda s: s.dropna().iloc[0] if s.dropna().size else np.nan)
+    return (prices / first_vals) * 100.0
 
 
 def load_portfolio_series() -> pd.Series:

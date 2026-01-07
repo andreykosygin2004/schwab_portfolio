@@ -367,16 +367,12 @@ def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies, scatt
         for col in rates_norm.columns:
             if col == cpi_name:
                 continue
-            line_style = {"width": 2}
-            if "HYG" in col:
-                # Make HYG more visible against similar credit lines.
-                line_style = {"width": 3, "dash": "dash"}
             rates_fig.add_trace(go.Scatter(
                 x=rates_norm.index,
                 y=rates_norm[col],
                 mode="lines",
                 name=col,
-                line=line_style,
+                line={"width": 2},
             ))
     if cpi_name and cpi_name in rates_df.columns:
         rates_fig.add_trace(go.Scatter(
