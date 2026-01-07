@@ -41,7 +41,7 @@ TARGET_LABELS = {
 layout = html.Div([
     html.Br(),
     html.H2("Regime Forecast"),
-    html.P("Weekly probability of entering Risk-Off / Credit Stress within the chosen horizon."),
+    html.P("Weekly probability of entering the selected regime within the chosen horizon."),
 
     html.Div([
         html.Div([
@@ -51,6 +51,7 @@ layout = html.Div([
                 options=[{"label": str(h), "value": h} for h in HORIZONS],
                 value=3,
                 clearable=False,
+                className="forecast-dropdown",
             ),
         ], style={"maxWidth": "200px"}),
         html.Div([
@@ -60,6 +61,7 @@ layout = html.Div([
                 options=[{"label": m, "value": m} for m in MODELS],
                 value="Logistic Regression",
                 clearable=False,
+                className="forecast-dropdown",
             ),
         ], style={"maxWidth": "260px"}),
         html.Div([
@@ -69,20 +71,9 @@ layout = html.Div([
                 options=[{"label": t, "value": t} for t in TARGETS],
                 value="Enter Risk-Off / Credit Stress",
                 clearable=False,
+                className="forecast-dropdown",
             ),
         ], style={"maxWidth": "280px"}),
-        html.Div([
-            html.Label("Mode"),
-            dcc.RadioItems(
-                id="forecast-mode",
-                options=[
-                    {"label": "Live", "value": "Live"},
-                    {"label": "Evaluation-only", "value": "Eval"},
-                ],
-                value="Live",
-                inline=True,
-            ),
-        ], style={"maxWidth": "320px"}),
         html.Div([
             html.Label("Data"),
             dbc.Button("Hard refresh proxies", id="forecast-refresh", size="sm", color="secondary"),
@@ -113,10 +104,9 @@ layout = html.Div([
     Input("forecast-horizon", "value"),
     Input("forecast-model", "value"),
     Input("forecast-target", "value"),
-    Input("forecast-mode", "value"),
     Input("forecast-refresh", "n_clicks"),
 )
-def update_forecast(horizon, model_name, target_choice, mode, refresh_clicks):
+def update_forecast(horizon, model_name, target_choice, refresh_clicks):
     start = pd.Timestamp("2005-01-01")
     today = pd.Timestamp.today().normalize()
     # Live mode uses the latest available proxy date; evaluation stays anchored to the test window.
@@ -130,7 +120,7 @@ def update_forecast(horizon, model_name, target_choice, mode, refresh_clicks):
         empty = empty_figure("No data available.")
         return empty, empty, "No data available.", None, None
 
-    end = latest if mode == "Live" else ANALYSIS_END
+    end = latest
     weekly_ret = make_weekly_returns(start, end)
     regimes = make_weekly_regimes(start, end)
     if weekly_ret.empty or regimes.empty:
@@ -175,18 +165,28 @@ def update_forecast(horizon, model_name, target_choice, mode, refresh_clicks):
     regime_hits = regimes.reindex(probs.index)
     hit_idx = regime_hits[regime_hits == target_label].index
     if not hit_idx.empty:
-        prob_fig.add_trace(go.Scatter(
-            x=hit_idx,
-            y=[0.02] * len(hit_idx),
-            mode="markers",
-            name="Target regime observed",
-            marker={"size": 6, "symbol": "circle-open"},
-        ))
+        runs = []
+        run_start = hit_idx[0]
+        prev = hit_idx[0]
+        for dt in hit_idx[1:]:
+            if (dt - prev).days <= 7:
+                prev = dt
+                continue
+            runs.append((run_start, prev))
+            run_start = dt
+            prev = dt
+        runs.append((run_start, prev))
+        for start_dt, end_dt in runs:
+            prob_fig.add_vrect(
+                x0=start_dt,
+                x1=end_dt,
+                fillcolor="rgba(220, 38, 38, 0.08)",
+                line_width=0,
+                layer="below",
+            )
     prob_fig.add_vrect(x0=ANALYSIS_START, x1=ANALYSIS_END, fillcolor="LightSalmon", opacity=0.2, line_width=0)
     prob_fig.update_layout(title=f"P(Enter {target_label} in next {horizon}w)", height=420)
     prob_fig.update_yaxes(title_text="Probability", tickformat=".0%")
-    if mode == "Eval":
-        prob_fig.update_xaxes(range=[ANALYSIS_START, ANALYSIS_END])
 
     calib_fig = empty_figure("No calibration data.")
     if test_labels.nunique() > 1:
@@ -209,7 +209,7 @@ def update_forecast(horizon, model_name, target_choice, mode, refresh_clicks):
     current_date = probs.index[-1].date()
     current_card = dbc.Card(
         dbc.CardBody([
-            html.Div(f"Current Risk-Off Probability (next {horizon}w): {current_prob:.1%}"),
+            html.Div(f"Current {target_label} Probability (next {horizon}w): {current_prob:.1%}"),
             html.Div(f"As of: {current_date}"),
             html.Div(f"Horizon: {horizon} weeks"),
         ]),
@@ -217,7 +217,7 @@ def update_forecast(horizon, model_name, target_choice, mode, refresh_clicks):
     )
 
     warning = None
-    if mode == "Live" and latest < (today - pd.Timedelta(days=7)):
+    if latest < (today - pd.Timedelta(days=7)):
         warning = dbc.Alert("Data not up to date. Click Refresh.", color="warning")
 
     latest_rows = []

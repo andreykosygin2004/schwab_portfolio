@@ -55,6 +55,25 @@ label {
   color: var(--text-primary);
 }
 
+.forecast-dropdown .Select-control {
+  min-height: 38px;
+  border-radius: 8px;
+  border-color: var(--border-subtle);
+}
+
+.forecast-dropdown .Select-placeholder,
+.forecast-dropdown .Select-value-label,
+.forecast-dropdown .Select-input {
+  font-size: 14px;
+  line-height: 38px;
+  color: var(--text-primary);
+}
+
+.forecast-dropdown .Select-menu-outer {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
 .dash-graph {
   margin-top: 6px;
   margin-bottom: 18px;
