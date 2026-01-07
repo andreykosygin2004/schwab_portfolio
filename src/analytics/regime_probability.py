@@ -16,6 +16,7 @@ from analytics.regimes import (
     load_proxy_prices,
     returns_from_prices,
 )
+from analytics_macro import clear_price_cache
 
 
 PROXIES = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
@@ -50,8 +51,11 @@ def get_latest_available_date(
     start: pd.Timestamp,
     end: pd.Timestamp | None = None,
     refresh: bool = False,
+    hard_refresh: bool = False,
 ) -> pd.Timestamp | None:
-    if refresh:
+    if hard_refresh:
+        clear_price_cache(PROXIES)
+    if refresh or hard_refresh:
         clear_proxy_cache()
     if end is None:
         end = pd.Timestamp.today()

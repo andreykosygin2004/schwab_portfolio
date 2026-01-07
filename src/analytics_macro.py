@@ -13,6 +13,28 @@ DATA_DIR = Path("data")
 CACHE_DIR = DATA_DIR / "macro_cache"
 
 
+def clear_price_cache(tickers: list[str] | None = None) -> list[Path]:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    removed = []
+    if tickers is None:
+        for path in CACHE_DIR.glob("*.csv"):
+            try:
+                path.unlink()
+                removed.append(path)
+            except Exception:
+                continue
+        return removed
+    for ticker in tickers:
+        path = CACHE_DIR / f"{ticker.upper()}.csv"
+        if path.exists():
+            try:
+                path.unlink()
+                removed.append(path)
+            except Exception:
+                continue
+    return removed
+
+
 def compute_returns(prices: pd.DataFrame | pd.Series, freq: str) -> pd.DataFrame | pd.Series:
     prices = prices.sort_index()
     if freq == "Weekly":

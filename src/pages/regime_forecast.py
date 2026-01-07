@@ -66,7 +66,7 @@ layout = html.Div([
         ], style={"maxWidth": "320px"}),
         html.Div([
             html.Label("Data"),
-            dbc.Button("Refresh data", id="forecast-refresh", size="sm", color="secondary"),
+            dbc.Button("Hard refresh proxies", id="forecast-refresh", size="sm", color="secondary"),
         ]),
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
@@ -97,7 +97,12 @@ def update_forecast(horizon, model_name, mode, refresh_clicks):
     start = pd.Timestamp("2005-01-01")
     today = pd.Timestamp.today().normalize()
     # Live mode uses the latest available proxy date; evaluation stays anchored to the test window.
-    latest = get_latest_available_date(start, today, refresh=bool(refresh_clicks))
+    latest = get_latest_available_date(
+        start,
+        today,
+        refresh=bool(refresh_clicks),
+        hard_refresh=bool(refresh_clicks),
+    )
     if latest is None:
         empty = empty_figure("No data available.")
         return empty, empty, "No data available.", None, None
