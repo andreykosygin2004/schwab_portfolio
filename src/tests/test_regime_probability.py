@@ -6,7 +6,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from analytics.regime_probability import make_labels, split_by_time, SplitConfig
+from analytics.regime_probability import make_entry_event_label, make_labels, split_by_time, SplitConfig
 
 
 def test_make_labels_horizon():
@@ -16,6 +16,18 @@ def test_make_labels_horizon():
         index=idx,
     )
     y = make_labels(regimes, 2)
+    assert y.iloc[0] == 1
+    assert y.iloc[1] == 0
+
+
+def test_make_entry_event_label_horizon():
+    idx = pd.date_range("2024-01-01", periods=6, freq="W-FRI")
+    regimes = pd.Series(
+        ["Neutral / Transition", "Rates Shock", "Neutral / Transition", "Risk-Off / Credit Stress", "Rates Shock", "Neutral / Transition"],
+        index=idx,
+    )
+    y = make_entry_event_label(regimes, "Rates Shock", 2)
+    assert len(y) == len(regimes) - 2
     assert y.iloc[0] == 1
     assert y.iloc[1] == 0
 

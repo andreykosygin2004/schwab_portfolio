@@ -79,6 +79,20 @@ def make_labels(regimes: pd.Series, horizon_weeks: int) -> pd.Series:
     return pd.Series(y, index=idx[:-horizon_weeks])
 
 
+def make_entry_event_label(regimes: pd.Series, target_label: str, horizon_weeks: int) -> pd.Series:
+    if regimes.empty:
+        return pd.Series(dtype=int)
+    unique = set(regimes.dropna().unique())
+    if target_label not in unique:
+        raise ValueError(f"Target label '{target_label}' not found in regime series.")
+    y = []
+    idx = regimes.index
+    for i in range(len(idx) - horizon_weeks):
+        future = regimes.iloc[i + 1:i + 1 + horizon_weeks]
+        y.append(int((future == target_label).any()))
+    return pd.Series(y, index=idx[:-horizon_weeks])
+
+
 def build_features(weekly_returns: pd.DataFrame, regimes: pd.Series) -> pd.DataFrame:
     if weekly_returns.empty or regimes.empty:
         return pd.DataFrame()

@@ -11,7 +11,7 @@ from analytics.regime_probability import (
     default_splits,
     evaluate_model,
     get_latest_available_date,
-    make_labels,
+    make_entry_event_label,
     make_weekly_regimes,
     make_weekly_returns,
     predict_proba,
@@ -26,6 +26,16 @@ dash.register_page(__name__, path="/regime-forecast", name="Regime Forecast")
 
 HORIZONS = [2, 3, 4]
 MODELS = ["Logistic Regression", "Gradient Boosting"]
+TARGETS = [
+    "Enter Risk-Off / Credit Stress",
+    "Enter Rates Shock",
+    "Enter Neutral / Compression",
+]
+TARGET_LABELS = {
+    "Enter Risk-Off / Credit Stress": "Risk-Off / Credit Stress",
+    "Enter Rates Shock": "Rates Shock",
+    "Enter Neutral / Compression": "Neutral / Transition",
+}
 
 
 layout = html.Div([
@@ -53,6 +63,15 @@ layout = html.Div([
             ),
         ], style={"maxWidth": "260px"}),
         html.Div([
+            html.Label("Target"),
+            dcc.Dropdown(
+                id="forecast-target",
+                options=[{"label": t, "value": t} for t in TARGETS],
+                value="Enter Risk-Off / Credit Stress",
+                clearable=False,
+            ),
+        ], style={"maxWidth": "280px"}),
+        html.Div([
             html.Label("Mode"),
             dcc.RadioItems(
                 id="forecast-mode",
@@ -76,6 +95,8 @@ layout = html.Div([
     html.Br(),
     dcc.Loading(dcc.Graph(id="forecast-prob")),
     html.Br(),
+    html.Div(id="forecast-latest-probs"),
+    html.Br(),
     dcc.Loading(dcc.Graph(id="forecast-calibration")),
     html.Br(),
     html.Div(id="forecast-metrics"),
@@ -88,12 +109,14 @@ layout = html.Div([
     Output("forecast-metrics", "children"),
     Output("forecast-current", "children"),
     Output("forecast-warning", "children"),
+    Output("forecast-latest-probs", "children"),
     Input("forecast-horizon", "value"),
     Input("forecast-model", "value"),
+    Input("forecast-target", "value"),
     Input("forecast-mode", "value"),
     Input("forecast-refresh", "n_clicks"),
 )
-def update_forecast(horizon, model_name, mode, refresh_clicks):
+def update_forecast(horizon, model_name, target_choice, mode, refresh_clicks):
     start = pd.Timestamp("2005-01-01")
     today = pd.Timestamp.today().normalize()
     # Live mode uses the latest available proxy date; evaluation stays anchored to the test window.
@@ -112,13 +135,18 @@ def update_forecast(horizon, model_name, mode, refresh_clicks):
     regimes = make_weekly_regimes(start, end)
     if weekly_ret.empty or regimes.empty:
         empty = empty_figure("No data available.")
-        return empty, empty, "No data available.", None, None
+        return empty, empty, "No data available.", None, None, None
 
-    y = make_labels(regimes, horizon)
+    target_label = TARGET_LABELS.get(target_choice, "Risk-Off / Credit Stress")
+    try:
+        y = make_entry_event_label(regimes, target_label, horizon)
+    except ValueError as exc:
+        empty = empty_figure(str(exc))
+        return empty, empty, str(exc), None, None, None
     X_full = build_features(weekly_ret, regimes)
     if X_full.empty or y.empty:
         empty = empty_figure("No data available.")
-        return empty, empty, "No data available.", None, None
+        return empty, empty, "No data available.", None, None, None
 
     aligned = X_full.index.intersection(y.index)
     X = X_full.reindex(aligned).dropna()
@@ -130,7 +158,7 @@ def update_forecast(horizon, model_name, mode, refresh_clicks):
     split = split_by_time(split_base, y_split, splits)
     if split["X_train"].empty or split["X_test"].empty:
         empty = empty_figure("Insufficient data for splits.")
-        return empty, empty, "Insufficient data for splits.", None, None
+        return empty, empty, "Insufficient data for splits.", None, None, None
 
     model, scaler = train_model(split["X_train"], split["y_train"], model_name)
     probs = predict_proba(model, scaler, X_full.dropna())
@@ -143,9 +171,19 @@ def update_forecast(horizon, model_name, mode, refresh_clicks):
     metrics = evaluate_model(test_labels, test_probs)
 
     prob_fig = go.Figure()
-    prob_fig.add_trace(go.Scatter(x=probs.index, y=probs.values, name="P(Risk-Off in horizon)"))
+    prob_fig.add_trace(go.Scatter(x=probs.index, y=probs.values, name="P(Enter target in horizon)"))
+    regime_hits = regimes.reindex(probs.index)
+    hit_idx = regime_hits[regime_hits == target_label].index
+    if not hit_idx.empty:
+        prob_fig.add_trace(go.Scatter(
+            x=hit_idx,
+            y=[0.02] * len(hit_idx),
+            mode="markers",
+            name="Target regime observed",
+            marker={"size": 6, "symbol": "circle-open"},
+        ))
     prob_fig.add_vrect(x0=ANALYSIS_START, x1=ANALYSIS_END, fillcolor="LightSalmon", opacity=0.2, line_width=0)
-    prob_fig.update_layout(title="Risk-Off Probability (Weekly)", height=420)
+    prob_fig.update_layout(title=f"P(Enter {target_label} in next {horizon}w)", height=420)
     prob_fig.update_yaxes(title_text="Probability", tickformat=".0%")
     if mode == "Eval":
         prob_fig.update_xaxes(range=[ANALYSIS_START, ANALYSIS_END])
@@ -182,4 +220,33 @@ def update_forecast(horizon, model_name, mode, refresh_clicks):
     if mode == "Live" and latest < (today - pd.Timedelta(days=7)):
         warning = dbc.Alert("Data not up to date. Click Refresh.", color="warning")
 
-    return prob_fig, calib_fig, metrics_text, current_card, warning
+    latest_rows = []
+    for choice, label in TARGET_LABELS.items():
+        try:
+            y_target = make_entry_event_label(regimes, label, horizon)
+        except ValueError:
+            latest_rows.append({"Target": choice, "Probability": "N/A"})
+            continue
+        aligned_target = X_full.index.intersection(y_target.index)
+        X_target = X_full.reindex(aligned_target).dropna()
+        y_target = y_target.reindex(X_target.index)
+        if X_target.empty:
+            latest_rows.append({"Target": choice, "Probability": "N/A"})
+            continue
+        split_target = split_by_time(X_target, y_target, splits)
+        if split_target["X_train"].empty:
+            latest_rows.append({"Target": choice, "Probability": "N/A"})
+            continue
+        model_t, scaler_t = train_model(split_target["X_train"], split_target["y_train"], model_name)
+        probs_t = predict_proba(model_t, scaler_t, X_target)
+        latest_rows.append({"Target": choice, "Probability": f"{probs_t.iloc[-1]:.1%}"})
+
+    latest_table = dbc.Table.from_dataframe(
+        pd.DataFrame(latest_rows),
+        striped=True,
+        bordered=True,
+        hover=True,
+        size="sm",
+    )
+
+    return prob_fig, calib_fig, metrics_text, current_card, warning, latest_table
