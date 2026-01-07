@@ -31,6 +31,7 @@ layout = html.Div([
     ) if risk_free_warning() else html.Div(),
     html.P("Explain performance using holdings and factor contributions."),
     html.Br(),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -54,10 +55,11 @@ layout = html.Div([
         ], style={"maxWidth": "240px"}),
         html.Div([
             html.Label("Top N"),
-            dcc.Input(id="attr-top-n", type="number", min=5, max=30, step=1, value=10),
+            dcc.Input(id="attr-top-n", type="number", min=5, max=30, step=1, value=14),
         ], style={"maxWidth": "120px"}),
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
+    html.Br(),
     html.Br(),
     html.H3("Holdings Attribution (Time-series)"),
     html.Br(),

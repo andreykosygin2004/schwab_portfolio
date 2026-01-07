@@ -105,6 +105,7 @@ layout = html.Div([
         "and inspect beta/alpha relationships."
     ),
     html.Br(),
+    html.Br(),
 
     html.Div([
         html.Label("Select Benchmark(s)"),
@@ -144,8 +145,6 @@ layout = html.Div([
         )
     ], style={"maxWidth": "650px"}),
 
-    html.Br(),
-    html.Hr(),
     html.Br(),
 
     # 1) Cumulative Return

@@ -107,6 +107,7 @@ layout = html.Div([
         style={"color": "#b45309", "marginBottom": "8px"},
     ) if risk_free_warning() else html.Div(),
     html.Br(),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -150,6 +151,7 @@ layout = html.Div([
 
     html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Macro Regime Overview"),
     html.Br(),
     html.Div([
@@ -172,8 +174,8 @@ layout = html.Div([
     ], style=GRID_STYLE),
 
     html.Br(),
-    html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Rates / Inflation / Credit"),
     html.Br(),
     html.P(
@@ -195,8 +197,8 @@ layout = html.Div([
     ),
 
     html.Br(),
-    html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Commodities / USD / Risk Sentiment"),
     html.Br(),
     html.P(
@@ -214,6 +216,7 @@ layout = html.Div([
 
     html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Macro Exposure Summary"),
     html.Br(),
     dash_table.DataTable(

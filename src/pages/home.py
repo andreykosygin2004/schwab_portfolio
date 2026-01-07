@@ -73,7 +73,9 @@ layout = html.Div([
         style_table={"width": "60%", "margin": "auto"}
     ),
 
+    html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Portfolio Total (Excluding Negative Cash Transfers - Cash Earns Risk-Free)"),
     html.Br(),
     html.Label("Select Date Range:"),
@@ -101,6 +103,7 @@ layout = html.Div([
     style_table={"width": "60%", "margin": "auto"}
     ),
     
+    html.Br(),
     html.Hr(),
     html.Br(),
     html.H3([
@@ -116,13 +119,7 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="pv-rolling-vol-graph")
                 ),
 
-    html.Hr(),
     html.Br(),
-    html.H3("Top Contributors (Snapshot)"),
-    html.Br(),
-    html.P("Approximate contribution = start weight × holding return over the selected window."),
-    dcc.Loading(dcc.Graph(id="top-contrib-graph")),
-
     html.Hr(),
     html.Br(),
     html.H3("General Overview (Price History)"),

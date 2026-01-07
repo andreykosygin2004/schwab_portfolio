@@ -82,6 +82,7 @@ layout = html.Div([
     ) if risk_free_warning() else html.Div(),
     html.P("Rule-based regime detection using macro proxies and risk signals."),
     html.Br(),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -124,14 +125,12 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
-    html.Hr(),
-    html.H3("Regime Timeline"),
+    html.Br(),
     html.Br(),
     dcc.Loading(dcc.Graph(id="regime-timeline")),
 
     html.Br(),
-    html.Hr(),
-    html.H3("Regime Summary"),
+    html.H3("Regime Summary", style={"textAlign": "center"}),
     html.Br(),
     dash_table.DataTable(
         id="regime-summary-table",
@@ -152,18 +151,21 @@ layout = html.Div([
 
     html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Transition Matrix"),
     html.Br(),
     dcc.Loading(dcc.Graph(id="regime-transition")),
 
     html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Regime Return Distribution (Same Frequency)"),
     html.Br(),
     dcc.Loading(dcc.Graph(id="regime-dist")),
 
     html.Br(),
     html.Hr(),
+    html.Br(),
     html.H3("Overlay Simulator"),
     html.Br(),
     html.P("Overlay is simulated only. Charts below compare baseline vs overlay and benchmark-relative metrics."),
