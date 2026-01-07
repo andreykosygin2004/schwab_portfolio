@@ -104,6 +104,7 @@ layout = html.Div([
         "Compare portfolio performance against benchmarks, track rolling excess return, "
         "and inspect beta/alpha relationships."
     ),
+    html.Br(),
 
     html.Div([
         html.Label("Select Benchmark(s)"),
@@ -143,7 +144,9 @@ layout = html.Div([
         )
     ], style={"maxWidth": "650px"}),
 
-    html.Br(), html.Br(),
+    html.Br(),
+    html.Hr(),
+    html.Br(),
 
     # 1) Cumulative Return
     dcc.Loading(dcc.Graph(id="cumret-graph")),

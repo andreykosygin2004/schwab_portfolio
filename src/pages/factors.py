@@ -36,6 +36,7 @@ layout = html.Div([
     html.P(
         "Estimate how macro and benchmark factors explain portfolio returns, and what residual return remains."
     ),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -69,7 +70,9 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
+    html.Hr(),
     html.H3("Multi-factor Regression Summary"),
+    html.Br(),
     dash_table.DataTable(
         id="factor-summary-table",
         columns=[
@@ -85,17 +88,23 @@ layout = html.Div([
     ),
 
     html.Br(),
+    html.Hr(),
+    html.H3("Rolling Betas"),
     html.Br(),
     dcc.Loading(dcc.Graph(id="rolling-betas-graph")),
 
     html.Br(),
+    html.Hr(),
     html.H3("Model-based Factor Contributions"),
+    html.Br(),
     html.P("Explained return by factor (monthly aggregation) from the multi-factor model."),
     dcc.Loading(dcc.Graph(id="factor-contrib-graph")),
     dcc.Loading(dcc.Graph(id="residual-graph")),
 
     html.Br(),
+    html.Hr(),
     html.H3("Stability Diagnostics"),
+    html.Br(),
     dcc.Loading(dcc.Graph(id="stability-graph")),
 ])
 

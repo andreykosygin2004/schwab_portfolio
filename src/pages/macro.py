@@ -106,6 +106,7 @@ layout = html.Div([
         risk_free_warning(),
         style={"color": "#b45309", "marginBottom": "8px"},
     ) if risk_free_warning() else html.Div(),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -148,7 +149,9 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
+    html.Hr(),
     html.H3("Macro Regime Overview"),
+    html.Br(),
     html.Div([
         html.Div([
             html.Div(id="macro-vol-metric", style={"fontSize": "20px", "fontWeight": "600"}),
@@ -170,7 +173,9 @@ layout = html.Div([
 
     html.Br(),
     html.Br(),
+    html.Hr(),
     html.H3("Rates / Inflation / Credit"),
+    html.Br(),
     html.P(
         "Normalized indices show how rates, inflation, and credit proxies have moved together. "
         "The table highlights recent momentum."
@@ -191,7 +196,9 @@ layout = html.Div([
 
     html.Br(),
     html.Br(),
+    html.Hr(),
     html.H3("Commodities / USD / Risk Sentiment"),
+    html.Br(),
     html.P(
         "Correlations show how the portfolio tracks macro proxies, while the scatter plot "
         "quantifies sensitivity to a selected driver."
@@ -206,7 +213,9 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="macro-scatter", style=GRAPH_STYLE, config={"responsive": False})),
 
     html.Br(),
+    html.Hr(),
     html.H3("Macro Exposure Summary"),
+    html.Br(),
     dash_table.DataTable(
         id="macro-exposure-table",
         columns=[
@@ -348,9 +357,30 @@ def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies, scatt
     if not rates_df.empty and freq == "Weekly":
         rates_df = rates_df.resample("W-FRI").last()
     rates_norm = normalize_to_100(rates_df) if not rates_df.empty else pd.DataFrame()
-    rates_fig = px.line(rates_norm, title="Rates / Inflation / Credit (Rebased to 100)")
-    rates_fig.update_layout(legend_title_text="", height=420, autosize=False)
-    rates_fig.update_yaxes(title_text="Index (start=100)")
+    # CPI can dwarf other series; plot CPI on a secondary axis for visibility.
+    cpi_name = infl_label if infl_label in rates_norm.columns else None
+    rates_fig = go.Figure()
+    if not rates_norm.empty:
+        for col in rates_norm.columns:
+            if col == cpi_name:
+                continue
+            rates_fig.add_trace(go.Scatter(x=rates_norm.index, y=rates_norm[col], mode="lines", name=col))
+    if cpi_name and cpi_name in rates_df.columns:
+        rates_fig.add_trace(go.Scatter(
+            x=rates_df.index,
+            y=rates_df[cpi_name],
+            mode="lines",
+            name=f"{cpi_name} (right axis)",
+            yaxis="y2",
+        ))
+    rates_fig.update_layout(
+        title="Rates / Inflation / Credit (Rebased to 100; CPI on right axis)",
+        legend_title_text="",
+        height=420,
+        autosize=False,
+        yaxis=dict(title="Index (start=100)"),
+        yaxis2=dict(title="CPI Level", overlaying="y", side="right"),
+    )
 
     rates_rows = []
     for name, series in section_series.items():

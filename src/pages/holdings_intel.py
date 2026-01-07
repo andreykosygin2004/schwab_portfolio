@@ -29,6 +29,7 @@ layout = html.Div([
     html.Br(),
     html.H2("Holdings Intelligence"),
     html.P("Analyze concentration, risk contribution, and scenario shocks."),
+    html.Br(),
 
     html.Div([
     html.Div([
@@ -53,12 +54,16 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
+    html.Hr(),
     html.H3("Concentration"),
+    html.Br(),
     html.P("HHI and top concentration based on end-of-period weights."),
     html.Div(id="concentration-metrics"),
 
     html.Br(),
+    html.Hr(),
     html.H3("Risk Contribution"),
+    html.Br(),
     html.P("Top 10 holdings by percent contribution to portfolio risk."),
     dcc.Loading(dcc.Graph(id="risk-contrib-graph")),
     dash_table.DataTable(
@@ -74,7 +79,9 @@ layout = html.Div([
     ),
 
     html.Br(),
+    html.Hr(),
     html.H3("Scenario Shocks"),
+    html.Br(),
     html.Div([
         html.Label("Holding"),
         dcc.Dropdown(id="shock-holding", options=[], value=None),
@@ -93,7 +100,9 @@ layout = html.Div([
     html.Div(id="shock-impact-output"),
 
     html.Br(),
+    html.Hr(),
     html.H3("Macro Shock Presets"),
+    html.Br(),
     html.P("Preset proxy shocks; portfolio impact uses simple proxy weight assumptions."),
     html.Div([
         html.Span("Rates shock (TLT -5% week)", style=INFO_STYLE),

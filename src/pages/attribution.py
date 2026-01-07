@@ -30,6 +30,7 @@ layout = html.Div([
         style={"color": "#b45309", "marginBottom": "8px"},
     ) if risk_free_warning() else html.Div(),
     html.P("Explain performance using holdings and factor contributions."),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -59,6 +60,7 @@ layout = html.Div([
 
     html.Br(),
     html.H3("Holdings Attribution (Time-series)"),
+    html.Br(),
     html.P("Method: time-series weights attribution using lagged MV weights × returns."),
     html.Div(id="attr-holdings-warning", style={"color": "#b45309", "marginBottom": "6px"}),
     dcc.Loading(dcc.Graph(id="attr-holdings-bar")),
@@ -76,13 +78,19 @@ layout = html.Div([
     ),
 
     html.Br(),
+    html.Hr(),
+    html.Br(),
     html.H3("Top Factor Drivers (Selected Window)"),
+    html.Br(),
     html.P("Period-focused factors; monthly aggregation over the selected window."),
     dcc.Loading(dcc.Graph(id="attr-factor-bars")),
     dcc.Loading(dcc.Graph(id="attr-factor-cum")),
 
     html.Br(),
+    html.Hr(),
+    html.Br(),
     html.H3("PM Memo"),
+    html.Br(),
     html.Ul(id="attr-memo"),
 ])
 
@@ -210,9 +218,13 @@ def update_attribution(start_date, end_date, freq, top_n):
             factor_cum.update_yaxes(tickformat=".1%")
 
             top_factor = betas.abs().sort_values(ascending=False).index[0] if not betas.empty else None
+            contrib_series = attr_df["contribution"]
+            # Use signed max/min to preserve detractor sign and selection.
+            top_contrib_name = contrib_series.idxmax() if not contrib_series.empty else None
+            top_detractor_name = contrib_series.idxmin() if not contrib_series.empty else None
             memo = build_pm_memo({
-                "top_contrib": f"{contrib_top.index[0]} ({contrib_top.iloc[0]:.1%})" if not contrib_top.empty else None,
-                "top_detractor": f"{contrib_top.index[-1]} ({contrib_top.iloc[-1]:.1%})" if not contrib_top.empty else None,
+                "top_contrib": f"{top_contrib_name} ({contrib_series.loc[top_contrib_name]:.1%})" if top_contrib_name else None,
+                "top_detractor": f"{top_detractor_name} ({contrib_series.loc[top_detractor_name]:.1%})" if top_detractor_name else None,
                 "top_factor": f"{top_factor} (beta {betas[top_factor]:.2f})" if top_factor else None,
                 "residual": f"{cum_resid.iloc[-1]:.1%}" if not cum_resid.empty else None,
             })

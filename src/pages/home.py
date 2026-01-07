@@ -36,9 +36,11 @@ layout = html.Div([
         "Track total portfolio value, clean cash-adjusted value, and individual holdings "
         "over the selected window."
     ),
+    html.Br(),
 
     html.Br(),
     html.H3("Holdings Market Values & Portfolio Total"),
+    html.Br(),
     html.Label("Select Holdings:"),
     dcc.Dropdown(
         id="mv-ticker-select",
@@ -73,6 +75,7 @@ layout = html.Div([
 
     html.Hr(),
     html.H3("Portfolio Total (Excluding Negative Cash Transfers - Cash Earns Risk-Free)"),
+    html.Br(),
     html.Label("Select Date Range:"),
     dcc.DatePickerRange(
         id="pv-clean-date-range",
@@ -104,6 +107,7 @@ layout = html.Div([
         f"Rolling Portfolio Volatility (Baseline, {ROLL_VOL_WINDOW}D)",
         html.Span(" (info)", id="rolling-vol-info", style=INFO_STYLE),
     ]),
+    html.Br(),
     dbc.Tooltip(
         "Annualized rolling volatility based on daily portfolio returns.",
         target="rolling-vol-info",
@@ -114,7 +118,15 @@ layout = html.Div([
 
     html.Hr(),
     html.Br(),
+    html.H3("Top Contributors (Snapshot)"),
+    html.Br(),
+    html.P("Approximate contribution = start weight × holding return over the selected window."),
+    dcc.Loading(dcc.Graph(id="top-contrib-graph")),
+
+    html.Hr(),
+    html.Br(),
     html.H3("General Overview (Price History)"),
+    html.Br(),
     html.Label("Select Tickers:"),
     dcc.Dropdown(
         id="ticker-select",

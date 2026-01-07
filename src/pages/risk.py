@@ -66,6 +66,7 @@ layout = html.Div([
     html.P(
         "Assess portfolio risk, drawdown behavior, and tail-risk measures across the selected window."
     ),
+    html.Br(),
 
     html.Div([
         html.Div([
@@ -99,7 +100,9 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
+    html.Hr(),
     html.H3("Top Risk Metrics"),
+    html.Br(),
     html.Div([
         html.Div([
             html.Div(id="risk-vol-metric", style={"fontSize": "20px", "fontWeight": "600"}),
@@ -120,11 +123,15 @@ layout = html.Div([
     ], style=GRID_STYLE),
 
     html.Br(),
+    html.Hr(),
     html.H3("Underwater Drawdown"),
+    html.Br(),
     dcc.Loading(dcc.Graph(id="underwater-graph")),
 
     html.Br(),
+    html.Hr(),
     html.H3("Drawdown Episodes"),
+    html.Br(),
     html.P("Worst 10 drawdown episodes with depth, duration to trough, and recovery."),
     dash_table.DataTable(
         id="drawdown-table",
@@ -143,7 +150,9 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="drawdown-scatter")),
 
     html.Br(),
+    html.Hr(),
     html.H3("VaR / CVaR (Historical)"),
+    html.Br(),
     html.Div([
         html.Span("What do VaR/CVaR mean?", id="var-info", style=INFO_STYLE),
         dbc.Tooltip(
