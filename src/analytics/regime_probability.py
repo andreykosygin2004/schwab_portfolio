@@ -52,38 +52,51 @@ def make_labels(regimes: pd.Series, horizon_weeks: int) -> pd.Series:
 
 
 def build_features(weekly_returns: pd.DataFrame, regimes: pd.Series) -> pd.DataFrame:
-    if weekly_returns.empty:
+    if weekly_returns.empty or regimes.empty:
         return pd.DataFrame()
     df = pd.DataFrame(index=weekly_returns.index)
-    df["spy_4w"] = weekly_returns.get("SPY", pd.Series(index=df.index)).rolling(4).sum()
-    df["spy_12w"] = weekly_returns.get("SPY", pd.Series(index=df.index)).rolling(12).sum()
-    df["qqq_4w"] = weekly_returns.get("QQQ", pd.Series(index=df.index)).rolling(4).sum()
-    df["qqq_12w"] = weekly_returns.get("QQQ", pd.Series(index=df.index)).rolling(12).sum()
-    df["spy_vol_8w"] = weekly_returns.get("SPY", pd.Series(index=df.index)).rolling(8).std()
-    df["qqq_vol_8w"] = weekly_returns.get("QQQ", pd.Series(index=df.index)).rolling(8).std()
-    df["spy_dd_26w"] = (1 + weekly_returns.get("SPY", pd.Series(index=df.index))).rolling(26).apply(lambda x: (x.prod() / x.cummax().max()) - 1, raw=False)
-    df["hyg_dd_26w"] = (1 + weekly_returns.get("HYG", pd.Series(index=df.index))).rolling(26).apply(lambda x: (x.prod() / x.cummax().max()) - 1, raw=False)
-    df["hyg_4w"] = weekly_returns.get("HYG", pd.Series(index=df.index)).rolling(4).sum()
+    if "SPY" in weekly_returns.columns:
+        df["spy_4w"] = weekly_returns["SPY"].rolling(4).sum()
+        df["spy_12w"] = weekly_returns["SPY"].rolling(12).sum()
+        df["spy_vol_8w"] = weekly_returns["SPY"].rolling(8).std()
+        df["spy_dd_26w"] = (1 + weekly_returns["SPY"]).rolling(26).apply(
+            lambda x: (x.prod() / x.cummax().max()) - 1, raw=False
+        )
+    if "QQQ" in weekly_returns.columns:
+        df["qqq_4w"] = weekly_returns["QQQ"].rolling(4).sum()
+        df["qqq_12w"] = weekly_returns["QQQ"].rolling(12).sum()
+        df["qqq_vol_8w"] = weekly_returns["QQQ"].rolling(8).std()
+    if "HYG" in weekly_returns.columns:
+        df["hyg_dd_26w"] = (1 + weekly_returns["HYG"]).rolling(26).apply(
+            lambda x: (x.prod() / x.cummax().max()) - 1, raw=False
+        )
+        df["hyg_4w"] = weekly_returns["HYG"].rolling(4).sum()
     if "HYG" in weekly_returns.columns and "TLT" in weekly_returns.columns:
         df["hyg_tlt_4w"] = (weekly_returns["HYG"] - weekly_returns["TLT"]).rolling(4).sum()
-    df["uup_4w"] = weekly_returns.get("UUP", pd.Series(index=df.index)).rolling(4).sum()
-    df["tlt_4w"] = weekly_returns.get("TLT", pd.Series(index=df.index)).rolling(4).sum()
-    df["uso_4w"] = weekly_returns.get("USO", pd.Series(index=df.index)).rolling(4).sum()
+    if "UUP" in weekly_returns.columns:
+        df["uup_4w"] = weekly_returns["UUP"].rolling(4).sum()
+    if "TLT" in weekly_returns.columns:
+        df["tlt_4w"] = weekly_returns["TLT"].rolling(4).sum()
+    if "USO" in weekly_returns.columns:
+        df["uso_4w"] = weekly_returns["USO"].rolling(4).sum()
     if "USO" in weekly_returns.columns and "TIP" in weekly_returns.columns:
         df["uso_tip_4w"] = (weekly_returns["USO"] - weekly_returns["TIP"]).rolling(4).sum()
 
     regimes = regimes.reindex(df.index).ffill()
+    if regimes.dropna().empty:
+        return pd.DataFrame()
     df["regime"] = regimes
     df["weeks_in_regime"] = regimes.groupby((regimes != regimes.shift()).cumsum()).cumcount() + 1
     df = pd.get_dummies(df, columns=["regime"], prefix="regime")
+    df = df.loc[:, df.notna().any()]
     df = df.dropna()
     return df
 
 
 def default_splits() -> SplitConfig:
     return SplitConfig(
-        train_end=pd.Timestamp("2021-12-31"),
-        val_end=pd.Timestamp("2022-12-31"),
+        train_end=pd.Timestamp("2020-12-31"),
+        val_end=pd.Timestamp("2023-12-31"),
         test_start=ANALYSIS_START,
         test_end=ANALYSIS_END,
     )
@@ -94,17 +107,26 @@ def resolve_splits(index: pd.DatetimeIndex, splits: SplitConfig) -> SplitConfig:
         return splits
     min_dt = index.min()
     max_dt = index.max()
-    train_end = min(splits.train_end, max_dt)
-    val_end = min(splits.val_end, max_dt)
+    n = len(index)
+    if splits.train_end < min_dt or splits.val_end < min_dt:
+        train_end = index[max(0, int(n * 0.6))]
+        val_end = index[max(0, int(n * 0.8))]
+    else:
+        train_end = min(splits.train_end, max_dt)
+        val_end = min(splits.val_end, max_dt)
+
     test_start = max(splits.test_start, min_dt)
     test_end = min(splits.test_end, max_dt)
+
+    if test_start <= train_end:
+        test_start = index[max(0, int(n * 0.85))]
     if test_start > test_end:
-        test_start = index[int(len(index) * 0.7)]
+        test_start = index[max(0, int(n * 0.85))]
         test_end = max_dt
-    if train_end >= test_start:
-        train_end = index[int(len(index) * 0.6)]
     if val_end <= train_end:
-        val_end = index[int(len(index) * 0.8)]
+        val_end = index[max(0, int(n * 0.7))]
+    if val_end >= test_start:
+        val_end = index[max(0, int(n * 0.75))]
     return SplitConfig(train_end=train_end, val_end=val_end, test_start=test_start, test_end=test_end)
 
 
