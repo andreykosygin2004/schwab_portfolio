@@ -7,18 +7,20 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from analytics.attribution import compute_contributions, top_contributors
+from analytics.attribution import time_series_attribution
 
 
-def test_contributions_sum():
-    weights = pd.Series({"A": 0.6, "B": 0.4})
-    returns = pd.Series({"A": 0.1, "B": -0.05})
-    contrib = compute_contributions(weights, returns)
-    assert np.isclose(contrib.sum(), 0.6 * 0.1 + 0.4 * -0.05)
-
-
-def test_top_contributors():
-    contrib = pd.Series({"A": 0.2, "B": -0.1, "C": 0.05})
-    top = top_contributors(contrib, 2)
-    assert "A" in top.index
-    assert "B" in top.index
+def test_time_series_attribution_sold_position():
+    idx = pd.date_range("2024-01-01", periods=4, freq="D")
+    mv = pd.DataFrame({
+        "MV_A": [100, 100, 0, 0],
+        "MV_B": [0, 0, 100, 100],
+    }, index=idx)
+    prices = pd.DataFrame({
+        "A": [100, 110, 110, 110],
+        "B": [100, 100, 105, 110],
+    }, index=idx)
+    total = mv.sum(axis=1)
+    attr = time_series_attribution(mv, prices, total)
+    assert attr.loc["A", "contribution"] != 0
+    assert attr.loc["B", "contribution"] != 0

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-from analytics.attribution import build_pm_memo, compute_contributions, factor_period_contributions, top_contributors
+from analytics.attribution import build_pm_memo, factor_period_contributions, time_series_attribution, top_contributors
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
 from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
@@ -58,15 +58,16 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
-    html.H3("Holdings Attribution (Snapshot)"),
+    html.H3("Holdings Attribution (Time-series)"),
+    html.P("Method: time-series weights attribution using lagged MV weights × returns."),
     html.Div(id="attr-holdings-warning", style={"color": "#b45309", "marginBottom": "6px"}),
     dcc.Loading(dcc.Graph(id="attr-holdings-bar")),
     dash_table.DataTable(
         id="attr-holdings-table",
         columns=[
             {"name": "Holding", "id": "holding"},
-            {"name": "Weight", "id": "weight"},
-            {"name": "Return", "id": "ret"},
+            {"name": "Avg Weight", "id": "avg_weight"},
+            {"name": "Total Return", "id": "ret"},
             {"name": "Contribution", "id": "contrib"},
             {"name": "% of total", "id": "pct_total"},
         ],
@@ -114,29 +115,53 @@ def update_attribution(start_date, end_date, freq, top_n):
     mv_cols = [c for c in df.columns if c.startswith("MV_")]
     warning = ""
     if not mv_cols:
-        warning = "No historical weights available; using current holdings weights."
-    weights = None
+        warning = "No historical market value columns available; falling back to snapshot weights."
+    else:
+        warning = "Using time-series weights (lagged MV weights × returns)."
+
+    total_value = df["total_value_clean"].copy()
+    if "total_value_clean_rf" in df.columns:
+        total_value = df["total_value_clean_rf"].copy()
+
     if mv_cols:
-        latest = df[mv_cols].iloc[-1].fillna(0.0)
+        mv_df = df[mv_cols]
+        price_slice = price_hist.loc[start:end, price_hist.columns.intersection([c.replace("MV_", "") for c in mv_cols])]
+        if price_slice.empty:
+            empty = empty_figure("No price data.")
+            return warning, empty, [], empty, empty, []
+        if freq == "Weekly":
+            mv_df = mv_df.resample("W-FRI").last()
+            price_slice = price_slice.resample("W-FRI").last()
+            total_value = total_value.resample("W-FRI").last()
+        attr_df = time_series_attribution(mv_df, price_slice, total_value)
+    else:
+        latest = df[mv_cols].iloc[-1].fillna(0.0) if mv_cols else pd.Series(dtype=float)
         total = latest.sum()
         weights = (latest / total).rename(lambda x: x.replace("MV_", "")) if total > 0 else latest * 0.0
-    else:
-        weights = pd.Series(dtype=float)
+        tickers = weights.index.tolist()
+        price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
+        if price_slice.empty:
+            empty = empty_figure("No price data.")
+            return warning, empty, [], empty, empty, []
+        returns = returns_from_prices(price_slice, freq=freq)
+        total_ret = (1 + returns).prod() - 1
+        contrib = weights * total_ret
+        attr_df = pd.DataFrame({
+            "avg_weight": weights,
+            "total_return": total_ret,
+            "contribution": contrib,
+        })
+        attr_df["pct_total"] = attr_df["contribution"] / attr_df["contribution"].sum() if attr_df["contribution"].sum() != 0 else 0.0
 
-    tickers = weights.index.tolist()
-    price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
-    if price_slice.empty:
-        empty = empty_figure("No price data.")
-        return warning, empty, [], empty, empty, []
+    if attr_df.empty:
+        empty = empty_figure("Attribution unavailable.")
+        return warning or "Attribution unavailable.", empty, [], empty, empty, []
 
-    returns = returns_from_prices(price_slice, freq=freq)
-    total_ret = (1 + returns).prod() - 1
-    contrib = compute_contributions(weights, total_ret)
-    contrib_top = top_contributors(contrib, top_n)
-    contrib_pct = contrib_top / contrib.sum() if contrib.sum() != 0 else contrib_top * 0.0
+    contrib_top = top_contributors(attr_df["contribution"], top_n)
+    attr_top = attr_df.loc[contrib_top.index]
 
     bar_fig = px.bar(
-        contrib_top.sort_values(),
+        attr_top["contribution"].sort_values(),
         orientation="h",
         title="Top Contributors / Detractors",
     )
@@ -144,13 +169,13 @@ def update_attribution(start_date, end_date, freq, top_n):
     bar_fig.update_xaxes(title_text="Contribution", tickformat=".1%")
 
     table_rows = []
-    for holding, value in contrib_top.items():
+    for holding, row in attr_top.iterrows():
         table_rows.append({
             "holding": holding,
-            "weight": f"{weights.get(holding, 0.0):.1%}",
-            "ret": f"{total_ret.get(holding, 0.0):.1%}",
-            "contrib": f"{value:.1%}",
-            "pct_total": f"{contrib_pct.get(holding, 0.0):.1%}",
+            "avg_weight": f"{row['avg_weight']:.1%}",
+            "ret": f"{row['total_return']:.1%}",
+            "contrib": f"{row['contribution']:.1%}",
+            "pct_total": f"{row['pct_total']:.1%}",
         })
 
     factor_prices = load_ticker_prices(FACTOR_OPTIONS, start=start, end=end)

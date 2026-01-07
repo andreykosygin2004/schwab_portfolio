@@ -35,3 +35,39 @@ def build_pm_memo(metrics: dict) -> list[str]:
     if metrics.get("regime_note"):
         memo.append(metrics["regime_note"])
     return memo
+
+
+def time_series_attribution(
+    mv_df: pd.DataFrame,
+    price_df: pd.DataFrame,
+    total_value: pd.Series,
+) -> pd.DataFrame:
+    if mv_df.empty or price_df.empty or total_value.empty:
+        return pd.DataFrame()
+
+    mv_df = mv_df.copy()
+    mv_df.columns = [c.replace("MV_", "") for c in mv_df.columns]
+    mv_df = mv_df.reindex(total_value.index).ffill().fillna(0.0)
+    total_value = total_value.reindex(mv_df.index).ffill()
+    weights = mv_df.div(total_value.replace(0, np.nan), axis=0).fillna(0.0)
+
+    prices = price_df.reindex(weights.index).ffill().dropna(how="all")
+    returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    weights_lag = weights.shift(1).fillna(0.0)
+
+    aligned = weights_lag.index.intersection(returns.index)
+    weights_lag = weights_lag.reindex(aligned)
+    returns = returns.reindex(aligned)
+
+    contrib = weights_lag * returns
+    total_contrib = contrib.sum(axis=0)
+    avg_weight = weights_lag.mean(axis=0)
+    total_return = (1 + returns).prod() - 1
+
+    out = pd.DataFrame({
+        "avg_weight": avg_weight,
+        "total_return": total_return,
+        "contribution": total_contrib,
+    })
+    out["pct_total"] = out["contribution"] / out["contribution"].sum() if out["contribution"].sum() != 0 else 0.0
+    return out.sort_values("contribution", ascending=False)
