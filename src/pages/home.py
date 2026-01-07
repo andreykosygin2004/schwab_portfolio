@@ -72,16 +72,7 @@ layout = html.Div([
     ),
 
     html.Hr(),
-
-    html.H3([
-        "Portfolio Total (Excluding Negative MoneyLink Transfers - Cash Earns Risk-Free)",
-        html.Span(" (info)", id="pv-clean-info", style=INFO_STYLE),
-    ]),
-    dbc.Tooltip(
-        "Removes negative MoneyLink transfers from cash; positive idle cash earns a risk-free proxy.",
-        target="pv-clean-info",
-        placement="right",
-    ),
+    html.H3("Portfolio Total (Excluding Negative Cash Transfers - Cash Earns Risk-Free)"),
     html.Label("Select Date Range:"),
     dcc.DatePickerRange(
         id="pv-clean-date-range",
@@ -105,10 +96,9 @@ layout = html.Div([
     style_cell={"textAlign": "left", "padding": "8px"},
     style_header={"fontWeight": "bold"},
     style_table={"width": "60%", "margin": "auto"}
-),
+    ),
     
     html.Hr(),
-
     html.Br(),
     html.H3([
         f"Rolling Portfolio Volatility (Baseline, {ROLL_VOL_WINDOW}D)",
@@ -119,18 +109,12 @@ layout = html.Div([
         target="rolling-vol-info",
         placement="right",
     ),
-    dcc.Loading(dcc.Graph(id="pv-rolling-vol-graph")),
-
-    html.Br(),
-    html.H3("Top Contributors (Snapshot)"),
-    html.P("Approximate contribution = start weight × holding return over the selected window."),
-    dcc.Loading(dcc.Graph(id="top-contrib-graph")),
+    dcc.Loading(dcc.Graph(id="pv-rolling-vol-graph")
+                ),
 
     html.Hr(),
-
     html.Br(),
     html.H3("General Overview (Price History)"),
-
     html.Label("Select Tickers:"),
     dcc.Dropdown(
         id="ticker-select",
@@ -138,7 +122,6 @@ layout = html.Div([
         value=[],
         multi=True
     ),
-
     html.Br(),
     html.Label("Select Date Range:"),
     dcc.DatePickerRange(id="date-range",
@@ -147,9 +130,7 @@ layout = html.Div([
                         start_date=prices.index.min(),
                         end_date=prices.index.max()
     ),
-
     html.Br(), html.Br(),
-
     dcc.Loading(dcc.Graph(id="ticker-graph"))
 ])
 
@@ -359,64 +340,4 @@ def update_rolling_vol_graph(start_date, end_date):
     fig.update_layout(height=GRAPH_HEIGHT, legend_title_text="")
     fig.update_yaxes(title_text="Annualized Volatility", tickformat=".1%")
     fig.update_xaxes(title_text="Date")
-    return fig
-
-
-@callback(
-    Output("top-contrib-graph", "figure"),
-    Input("mv-ticker-select", "value"),
-    Input("mv-date-range", "start_date"),
-    Input("mv-date-range", "end_date"),
-)
-def update_top_contributors(selected_holdings, start_date, end_date):
-    df_slice = holdings_ts.loc[start_date:end_date].copy()
-    if df_slice.empty:
-        return empty_figure("No data in selected range", height=GRAPH_HEIGHT)
-
-    selected_holdings = selected_holdings or []
-    selected_tickers = [t for t in selected_holdings if t != "Portfolio Total"]
-    mv_cols = [f"MV_{t}" for t in selected_tickers if f"MV_{t}" in df_slice.columns]
-    if not mv_cols:
-        mv_cols = [c for c in df_slice.columns if c.startswith("MV_")]
-    if not mv_cols:
-        return empty_figure("No holdings available for contribution analysis", height=GRAPH_HEIGHT)
-
-    start_mvs = df_slice[mv_cols].iloc[0].fillna(0.0)
-    total_mv = float(start_mvs.sum())
-    if total_mv <= 0:
-        return empty_figure("No market value at start of range", height=GRAPH_HEIGHT)
-
-    contrib_rows = []
-    for mv_col, mv_val in start_mvs.items():
-        ticker = mv_col.replace("MV_", "")
-        if ticker not in prices.columns:
-            continue
-        price_slice = prices.loc[start_date:end_date, ticker].dropna()
-        if price_slice.empty:
-            continue
-        holding_ret = (price_slice.iloc[-1] / price_slice.iloc[0]) - 1.0
-        weight = mv_val / total_mv
-        contrib = weight * holding_ret
-        contrib_rows.append({"ticker": ticker, "contrib": contrib})
-
-    if not contrib_rows:
-        return empty_figure("No price data for selected holdings", height=GRAPH_HEIGHT)
-
-    contrib_df = (
-        pd.DataFrame(contrib_rows)
-        .assign(abs_contrib=lambda d: d["contrib"].abs())
-        .sort_values("abs_contrib", ascending=False)
-        .head(10)
-    )
-
-    fig = px.bar(
-        contrib_df.sort_values("contrib"),
-        x="contrib",
-        y="ticker",
-        orientation="h",
-        title="Top Contributors to Return (Approx.)",
-    )
-    fig.update_layout(height=GRAPH_HEIGHT, showlegend=False)
-    fig.update_xaxes(title_text="Contribution to Portfolio Return", tickformat=".1%")
-    fig.update_yaxes(title_text="")
     return fig

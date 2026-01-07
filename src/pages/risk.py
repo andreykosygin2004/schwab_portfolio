@@ -121,14 +121,6 @@ layout = html.Div([
 
     html.Br(),
     html.H3("Underwater Drawdown"),
-    html.Div([
-        html.Span("Drawdown plot", id="underwater-info", style=INFO_STYLE),
-        dbc.Tooltip(
-            "Drawdown is percent decline from the running peak. Shows depth of losses and recovery.",
-            target="underwater-info",
-            placement="right",
-        ),
-    ]),
     dcc.Loading(dcc.Graph(id="underwater-graph")),
 
     html.Br(),

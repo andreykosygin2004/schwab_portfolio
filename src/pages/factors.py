@@ -86,7 +86,6 @@ layout = html.Div([
 
     html.Br(),
     html.Br(),
-    html.H3("Rolling Betas"),
     dcc.Loading(dcc.Graph(id="rolling-betas-graph")),
 
     html.Br(),
@@ -97,14 +96,6 @@ layout = html.Div([
 
     html.Br(),
     html.H3("Stability Diagnostics"),
-    html.Div([
-        html.Span("Rolling R^2 + Beta Dispersion", id="stability-info", style=INFO_STYLE),
-        dbc.Tooltip(
-            "Rolling R^2 shows explanatory power; dispersion measures beta variability across factors.",
-            target="stability-info",
-            placement="right",
-        ),
-    ]),
     dcc.Loading(dcc.Graph(id="stability-graph")),
 ])
 

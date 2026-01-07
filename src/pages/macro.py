@@ -106,10 +106,6 @@ layout = html.Div([
         risk_free_warning(),
         style={"color": "#b45309", "marginBottom": "8px"},
     ) if risk_free_warning() else html.Div(),
-    html.P(
-        "Use the controls to frame the macro window, then explore regime metrics, "
-        "rates/credit shifts, and exposure diagnostics for the portfolio."
-    ),
 
     html.Div([
         html.Div([
@@ -153,19 +149,6 @@ layout = html.Div([
 
     html.Br(),
     html.H3("Macro Regime Overview"),
-    html.Div([
-        html.Span(id="macro-regime-info", style=INFO_STYLE),
-        dbc.Tooltip(
-            "Rolling volatility, correlation, and beta use the selected frequency and window. "
-            "Max drawdown is the worst peak-to-trough decline over the window.",
-            target="macro-regime-info",
-            placement="right",
-        ),
-    ]),
-    html.P(
-        "Rolling risk, correlation, and beta show how the portfolio behaves relative to the benchmark. "
-        "Max drawdown highlights the worst peak-to-trough decline in the selected window."
-    ),
     html.Div([
         html.Div([
             html.Div(id="macro-vol-metric", style={"fontSize": "20px", "fontWeight": "600"}),
@@ -224,7 +207,6 @@ layout = html.Div([
 
     html.Br(),
     html.H3("Macro Exposure Summary"),
-    html.P("Beta, correlation, and volatility summarize the portfolio's exposure to selected proxies."),
     dash_table.DataTable(
         id="macro-exposure-table",
         columns=[

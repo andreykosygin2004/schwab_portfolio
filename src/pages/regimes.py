@@ -123,7 +123,6 @@ layout = html.Div([
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
     html.Br(),
-    html.H3("Regime Timeline"),
     dcc.Loading(dcc.Graph(id="regime-timeline")),
 
     html.Br(),

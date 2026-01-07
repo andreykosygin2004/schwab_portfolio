@@ -106,15 +106,7 @@ layout = html.Div([
     ),
 
     html.Div([
-        html.Label([
-            "Select Benchmark(s)",
-            html.Span(" (info)", id="benchmarks-info", style={"cursor": "pointer", "textDecoration": "underline"}),
-        ]),
-        dbc.Tooltip(
-            "Benchmarks are used for cumulative return and rolling excess return calculations.",
-            target="benchmarks-info",
-            placement="right",
-        ),
+        html.Label("Select Benchmark(s)"),
         dcc.Dropdown(
             id="bench-select",
             options=benchmark_options,
@@ -159,40 +151,23 @@ layout = html.Div([
     html.Br(),
 
     # 2) Rolling Excess Return
-    html.Div([
-        html.Span("Rolling Excess Return (Portfolio vs Benchmark)", id="rolling-excess-info", style={"cursor": "pointer", "textDecoration": "underline"}),
-        dbc.Tooltip(
-            "Annualized average return difference between portfolio and benchmark over the rolling window.",
-            target="rolling-excess-info",
-            placement="right",
-        ),
-    ]),
     dcc.Loading(dcc.Graph(id="rolling-excess-graph")),
-
     html.Br(),
 
     # 2b) Tracking Error + Information Ratio
     html.Div([
-        html.Span("Tracking Error & Information Ratio (Portfolio vs Benchmark)", id="tracking-info", style={"cursor": "pointer", "textDecoration": "underline"}),
+        "Tracking Error & Information Ratio (Portfolio vs Benchmark)",
+        html.I(" ⓘ", id="tracking-info", style={"cursor": "pointer", "color": "#6c757d"}),
         dbc.Tooltip(
-            "Tracking error is annualized std dev of excess returns; info ratio is annualized excess return divided by tracking error.",
+            "Tracking error is the annualized standard deviation of excess returns. "
+            "The information ratio is the annualized excess return divided by tracking error.",
             target="tracking-info",
-            placement="right",
         ),
     ]),
     dcc.Loading(dcc.Graph(id="tracking-error-graph")),
-
     html.Br(),
 
     # 3) Alpha & Beta (CAPM-style)
-    html.Div([
-        html.Span("Alpha & Beta (CAPM)", id="alpha-beta-info", style={"cursor": "pointer", "textDecoration": "underline"}),
-        dbc.Tooltip(
-            "CAPM regression of portfolio excess returns on benchmark excess returns (daily).",
-            target="alpha-beta-info",
-            placement="right",
-        ),
-    ]),
     dcc.Loading(dcc.Graph(id="alpha-beta-graph")),
 ])
 
