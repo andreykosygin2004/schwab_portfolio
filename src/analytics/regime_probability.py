@@ -9,7 +9,13 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import roc_auc_score, average_precision_score, brier_score_loss
 
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
-from analytics.regimes import compute_regime_features, label_regimes, load_proxy_prices, returns_from_prices
+from analytics.regimes import (
+    clear_proxy_cache,
+    compute_regime_features,
+    label_regimes,
+    load_proxy_prices,
+    returns_from_prices,
+)
 
 
 PROXIES = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
@@ -38,6 +44,24 @@ def make_weekly_regimes(start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
     features = compute_regime_features(prices, freq="Weekly")
     labels = label_regimes(features, "Balanced")
     return labels.dropna()
+
+
+def get_latest_available_date(
+    start: pd.Timestamp,
+    end: pd.Timestamp | None = None,
+    refresh: bool = False,
+) -> pd.Timestamp | None:
+    if refresh:
+        clear_proxy_cache()
+    if end is None:
+        end = pd.Timestamp.today()
+    prices = load_proxy_prices(start, end)
+    if prices.empty:
+        return None
+    usable = prices.dropna(how="any")
+    if not usable.empty:
+        return usable.index.max()
+    return prices.dropna(how="all").index.max()
 
 
 def make_labels(regimes: pd.Series, horizon_weeks: int) -> pd.Series:

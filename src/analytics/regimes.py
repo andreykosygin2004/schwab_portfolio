@@ -21,6 +21,10 @@ def load_proxy_prices(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     return load_ticker_prices(PROXY_TICKERS, start=start, end=end)
 
 
+def clear_proxy_cache() -> None:
+    load_proxy_prices.cache_clear()
+
+
 def compute_regime_features(proxy_prices: pd.DataFrame, freq: str) -> pd.DataFrame:
     if proxy_prices.empty:
         return pd.DataFrame()
