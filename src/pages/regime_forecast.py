@@ -14,6 +14,7 @@ from analytics.regime_probability import (
     make_weekly_regimes,
     make_weekly_returns,
     predict_proba,
+    resolve_splits,
     split_by_time,
     train_model,
 )
@@ -23,7 +24,7 @@ from viz.plots import empty_figure
 dash.register_page(__name__, path="/regime-forecast", name="Regime Forecast")
 
 HORIZONS = [2, 3, 4]
-MODELS = ["Logistic Regression"]
+MODELS = ["Logistic Regression", "Gradient Boosting"]
 
 
 layout = html.Div([
@@ -83,13 +84,13 @@ def update_forecast(horizon, model_name):
     X = X.reindex(aligned).dropna()
     y = y.reindex(X.index)
 
-    splits = default_splits()
+    splits = resolve_splits(X.index, default_splits())
     split = split_by_time(X, y, splits)
     if split["X_train"].empty or split["X_test"].empty:
         empty = empty_figure("Insufficient data for splits.")
         return empty, empty, "Insufficient data for splits."
 
-    model, scaler = train_model(split["X_train"], split["y_train"])
+    model, scaler = train_model(split["X_train"], split["y_train"], model_name)
     probs = predict_proba(model, scaler, X)
     test_probs = probs.loc[split["X_test"].index]
     test_labels = split["y_test"]

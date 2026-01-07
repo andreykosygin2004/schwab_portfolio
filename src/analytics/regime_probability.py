@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import roc_auc_score, average_precision_score, brier_score_loss
 
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
@@ -27,7 +28,8 @@ def make_weekly_returns(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
     prices = load_proxy_prices(start, end)
     if prices.empty:
         return pd.DataFrame()
-    weekly = returns_from_prices(prices, freq="Weekly")
+    daily_ret = prices.pct_change().replace([np.inf, -np.inf], np.nan)
+    weekly = (1 + daily_ret).resample("W-FRI").prod() - 1
     return weekly.dropna(how="all")
 
 
@@ -87,6 +89,25 @@ def default_splits() -> SplitConfig:
     )
 
 
+def resolve_splits(index: pd.DatetimeIndex, splits: SplitConfig) -> SplitConfig:
+    if index.empty:
+        return splits
+    min_dt = index.min()
+    max_dt = index.max()
+    train_end = min(splits.train_end, max_dt)
+    val_end = min(splits.val_end, max_dt)
+    test_start = max(splits.test_start, min_dt)
+    test_end = min(splits.test_end, max_dt)
+    if test_start > test_end:
+        test_start = index[int(len(index) * 0.7)]
+        test_end = max_dt
+    if train_end >= test_start:
+        train_end = index[int(len(index) * 0.6)]
+    if val_end <= train_end:
+        val_end = index[int(len(index) * 0.8)]
+    return SplitConfig(train_end=train_end, val_end=val_end, test_start=test_start, test_end=test_end)
+
+
 def split_by_time(X: pd.DataFrame, y: pd.Series, splits: SplitConfig) -> dict:
     train_mask = X.index <= splits.train_end
     val_mask = (X.index > splits.train_end) & (X.index <= splits.val_end)
@@ -101,9 +122,13 @@ def split_by_time(X: pd.DataFrame, y: pd.Series, splits: SplitConfig) -> dict:
     }
 
 
-def train_model(X: pd.DataFrame, y: pd.Series) -> tuple[LogisticRegression, StandardScaler]:
+def train_model(X: pd.DataFrame, y: pd.Series, model_name: str) -> tuple[object, StandardScaler]:
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X.values)
+    if model_name == "Gradient Boosting":
+        model = GradientBoostingClassifier(random_state=42)
+        model.fit(X_scaled, y.values)
+        return model, scaler
     model = LogisticRegression(max_iter=1000, class_weight="balanced")
     model.fit(X_scaled, y.values)
     return model, scaler
