@@ -16,6 +16,7 @@ NAV_ORDER = [
     "/macro",
     "/regimes",
     "/regime-forecast",
+    "/factor-rotation",
 ]
 
 page_by_path = {page["path"]: page for page in dash.page_registry.values()}

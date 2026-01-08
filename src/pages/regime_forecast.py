@@ -244,6 +244,9 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
 
     latest_rows = []
     for choice, label in TARGET_LABELS.items():
+        if choice == target_choice:
+            latest_rows.append({"Target": choice, "Probability": f"{current_prob:.1%}"})
+            continue
         try:
             y_target = make_entry_event_label(regimes, label, horizon)
         except ValueError:

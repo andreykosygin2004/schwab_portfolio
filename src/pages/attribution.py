@@ -5,7 +5,13 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-from analytics.attribution import build_pm_memo, factor_period_contributions, time_series_attribution, top_contributors
+from analytics.attribution import (
+    build_pm_memo,
+    compute_trade_based_returns,
+    factor_period_contributions,
+    time_series_attribution,
+    top_contributors,
+)
 from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
@@ -116,6 +122,7 @@ def update_attribution(start_date, end_date, freq, top_n):
 
     holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
     price_hist = pd.read_csv("data/historical_prices.csv", parse_dates=["Date"]).set_index("Date").sort_index()
+    transactions = pd.read_csv("data/schwab_transactions.csv")
 
     df = holdings_ts.loc[start:end]
     if df.empty:
@@ -143,8 +150,11 @@ def update_attribution(start_date, end_date, freq, top_n):
             mv_df = mv_df.resample("W-FRI").last()
             price_slice = price_slice.resample("W-FRI").last()
             total_value = total_value.resample("W-FRI").last()
-        attr_df = time_series_attribution(mv_df, price_slice, total_value)
-    else:
+    attr_df = time_series_attribution(mv_df, price_slice, total_value)
+    trade_returns = compute_trade_based_returns(transactions, price_slice, start, end)
+    if not trade_returns.empty:
+        attr_df["total_return"] = attr_df.index.to_series().map(trade_returns).combine_first(attr_df["total_return"])
+    if attr_df.empty:
         latest = df[mv_cols].iloc[-1].fillna(0.0) if mv_cols else pd.Series(dtype=float)
         total = latest.sum()
         weights = (latest / total).rename(lambda x: x.replace("MV_", "")) if total > 0 else latest * 0.0

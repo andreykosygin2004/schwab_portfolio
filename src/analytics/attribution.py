@@ -68,3 +68,62 @@ def time_series_attribution(
     })
     out["pct_total"] = out["contribution"] / out["contribution"].sum() if out["contribution"].sum() != 0 else 0.0
     return out.sort_values("contribution", ascending=False)
+
+
+def compute_trade_based_returns(
+    transactions: pd.DataFrame,
+    price_df: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> pd.Series:
+    if transactions.empty:
+        return pd.Series(dtype=float)
+
+    tx = transactions.copy()
+    tx["Date"] = pd.to_datetime(tx["Date"], errors="coerce")
+    tx = tx.dropna(subset=["Date"])
+
+    def _to_num(val):
+        if pd.isna(val):
+            return np.nan
+        return pd.to_numeric(str(val).replace("$", "").replace(",", ""), errors="coerce")
+
+    tx["Quantity"] = tx["Quantity"].apply(_to_num)
+    tx["Price"] = tx["Price"].apply(_to_num)
+    tx = tx[tx["Symbol"].notna()]
+
+    buys = tx[tx["Action"].str.lower() == "buy"].copy()
+    sells = tx[tx["Action"].str.lower() == "sell"].copy()
+
+    out = {}
+    for symbol in tx["Symbol"].dropna().unique():
+        sym_buys = buys[buys["Symbol"] == symbol]
+        sym_sells = sells[sells["Symbol"] == symbol]
+        if sym_buys.empty:
+            continue
+
+        last_sell_date = sym_sells[(sym_sells["Date"] >= start) & (sym_sells["Date"] <= end)]["Date"].max()
+        cutoff = last_sell_date if pd.notna(last_sell_date) else end
+
+        buy_slice = sym_buys[sym_buys["Date"] <= cutoff]
+        if buy_slice.empty:
+            continue
+        buy_qty = buy_slice["Quantity"].abs().sum()
+        buy_px = (buy_slice["Quantity"].abs() * buy_slice["Price"]).sum() / buy_qty if buy_qty > 0 else np.nan
+
+        sell_slice = sym_sells[(sym_sells["Date"] >= start) & (sym_sells["Date"] <= end)]
+        if not sell_slice.empty:
+            sell_qty = sell_slice["Quantity"].abs().sum()
+            sell_px = (sell_slice["Quantity"].abs() * sell_slice["Price"]).sum() / sell_qty if sell_qty > 0 else np.nan
+        else:
+            if symbol in price_df.columns:
+                series = price_df[symbol].dropna()
+                series = series.loc[:end]
+                sell_px = float(series.iloc[-1]) if not series.empty else np.nan
+            else:
+                sell_px = np.nan
+
+        if pd.notna(buy_px) and pd.notna(sell_px) and buy_px > 0:
+            out[symbol] = (sell_px / buy_px) - 1
+
+    return pd.Series(out)
