@@ -49,7 +49,7 @@ def time_series_attribution(
 
     weights_lag = time_varying_weights(mv_df, freq="Daily", total_value=total_value)
 
-    prices = price_df.reindex(weights.index).ffill().dropna(how="all")
+    prices = price_df.reindex(weights_lag.index).ffill().dropna(how="all")
     returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
     aligned = weights_lag.index.intersection(returns.index)
