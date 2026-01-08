@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 from analytics.holdings_intel import (
     concentration_metrics,
@@ -492,11 +493,11 @@ def update_factor_rotation(start_date, end_date, smooth_lambda, max_weight, tc_b
 @callback(
     Output("rotation-download", "data"),
     Input("rotation-download-btn", "n_clicks"),
-    Input("rotation-blotter", "data"),
+    State("rotation-blotter", "data"),
     prevent_initial_call=True,
 )
 def download_rotation_blotter(n_clicks, rows):
-    if not rows:
+    if not n_clicks or not rows:
         return None
     df = pd.DataFrame(rows)
     return dcc.send_data_frame(df.to_csv, "rotation_trade_blotter.csv", index=False)
