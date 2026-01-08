@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from analytics.common import time_varying_weights
+
 
 def compute_contributions(weights: pd.Series, returns: pd.Series) -> pd.Series:
     weights = weights.reindex(returns.index).fillna(0.0)
@@ -45,18 +47,13 @@ def time_series_attribution(
     if mv_df.empty or price_df.empty or total_value.empty:
         return pd.DataFrame()
 
-    mv_df = mv_df.copy()
-    mv_df.columns = [c.replace("MV_", "") for c in mv_df.columns]
-    mv_df = mv_df.reindex(total_value.index).ffill().fillna(0.0)
-    total_value = total_value.reindex(mv_df.index).ffill()
-    weights = mv_df.div(total_value.replace(0, np.nan), axis=0).fillna(0.0)
+    weights_lag = time_varying_weights(mv_df, freq="Daily", total_value=total_value)
 
     prices = price_df.reindex(weights.index).ffill().dropna(how="all")
     returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
-    weights_lag = weights.shift(1).fillna(0.0)
 
     aligned = weights_lag.index.intersection(returns.index)
-    weights_lag = weights_lag.reindex(aligned)
+    weights_lag = weights_lag.reindex(aligned).fillna(0.0)
     returns = returns.reindex(aligned)
 
     contrib = weights_lag * returns

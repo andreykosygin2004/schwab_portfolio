@@ -6,12 +6,29 @@ import dash_bootstrap_components as dbc
 app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = "Schwab Portfolio Dashboard"
 
-nav_links = [
-    dbc.NavItem(
-        dbc.NavLink(page["name"], href=page["path"])
-    )
-    for page in dash.page_registry.values()
+NAV_ORDER = [
+    "/",
+    "/benchmarks",
+    "/risk",
+    "/holdings-intel",
+    "/attribution",
+    "/factors",
+    "/macro",
+    "/regimes",
+    "/regime-forecast",
 ]
+
+page_by_path = {page["path"]: page for page in dash.page_registry.values()}
+nav_links = []
+for path in NAV_ORDER:
+    page = page_by_path.get(path)
+    if not page:
+        continue
+    nav_links.append(
+        dbc.NavItem(
+            dbc.NavLink(page["name"], href=page["path"], active="exact")
+        )
+    )
 
 app.layout = dbc.Container([
     dbc.NavbarSimple(

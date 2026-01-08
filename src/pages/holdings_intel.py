@@ -12,6 +12,9 @@ from analytics.holdings_intel import (
 )
 from analytics.risk import compute_returns
 from analytics_macro import load_portfolio_series
+from analytics.constants import DEFAULT_START_DATE_ANALYSIS
+from analytics.portfolio import load_holdings_timeseries
+from analytics.common import time_varying_weights
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/holdings-intel", name="Holdings Intelligence")
@@ -20,7 +23,7 @@ PORTFOLIO_SERIES = load_portfolio_series()
 MIN_DATE = PORTFOLIO_SERIES.index.min()
 MAX_DATE = PORTFOLIO_SERIES.index.max()
 DEFAULT_END = MAX_DATE
-DEFAULT_START = max(MIN_DATE, DEFAULT_END - pd.DateOffset(years=3))
+DEFAULT_START = max(MIN_DATE, DEFAULT_START_DATE_ANALYSIS)
 
 INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
@@ -67,6 +70,7 @@ layout = html.Div([
     html.H3("Risk Contribution"),
     html.Br(),
     html.P("Top 10 holdings by percent contribution to portfolio risk."),
+    html.Div(id="risk-contrib-method", style={"color": "#5b6675", "marginBottom": "6px"}),
     dcc.Loading(dcc.Graph(id="risk-contrib-graph")),
     dash_table.DataTable(
         id="risk-contrib-table",
@@ -126,7 +130,7 @@ layout = html.Div([
     Input("holdings-date-range", "end_date"),
 )
 def update_holdings_options(start_date, end_date):
-    holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
+    holdings_ts = load_holdings_timeseries()
     df = holdings_ts.loc[start_date:end_date]
     mv_cols = [c for c in df.columns if c.startswith("MV_")]
     if not mv_cols:
@@ -141,6 +145,7 @@ def update_holdings_options(start_date, end_date):
 
 @callback(
     Output("concentration-metrics", "children"),
+    Output("risk-contrib-method", "children"),
     Output("risk-contrib-graph", "figure"),
     Output("risk-contrib-table", "data"),
     Output("shock-impact-output", "children"),
@@ -152,16 +157,16 @@ def update_holdings_options(start_date, end_date):
     Input("shock-slider", "value"),
 )
 def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value):
-    holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
+    holdings_ts = load_holdings_timeseries()
     df = holdings_ts.loc[start_date:end_date]
     if df.empty:
         empty = empty_figure("No data available for selected range.")
-        return "No data available.", empty, [], "No data available.", "No data available."
+        return "No data available.", None, empty, [], "No data available.", "No data available."
 
     mv_cols = [c for c in df.columns if c.startswith("MV_")]
     if not mv_cols:
         empty = empty_figure("No holdings available.")
-        return "No holdings available.", empty, [], "No holdings available.", "No holdings available."
+        return "No holdings available.", None, empty, [], "No holdings available.", "No holdings available."
 
     last_mvs = df[mv_cols].iloc[-1].fillna(0.0)
     total_mv = float(last_mvs.sum())
@@ -180,18 +185,24 @@ def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value
     price_hist = price_hist[price_hist.columns.intersection(weights.index)]
     if price_hist.empty:
         risk_fig = empty_figure("No price history for risk contribution.")
-        return conc_text, risk_fig, [], "No price data for scenario.", "No price data for macro shocks."
+        return conc_text, None, risk_fig, [], "No price data for scenario.", "No price data for macro shocks."
 
     returns = compute_returns(price_hist, freq=freq)
     if returns.empty:
         risk_fig = empty_figure("Not enough data for risk contribution.")
-        return conc_text, risk_fig, [], "No data for scenario.", "No data for macro shocks."
+        return conc_text, None, risk_fig, [], "No data for scenario.", "No data for macro shocks."
 
+    weights_lag = time_varying_weights(df[mv_cols], freq=freq)
+    method_note = "Method: time-varying weights (lagged MV weights) across the window."
+    avg_weights = weights_lag.reindex(returns.index, method="ffill").mean()
+    if weights_lag.empty or float(avg_weights.sum()) == 0.0:
+        method_note = "Method: snapshot weights (fallback; limited history in window)."
+        avg_weights = weights.copy()
     cov = covariance_matrix(returns)
-    risk_df = risk_contributions(weights, cov)
+    risk_df = risk_contributions(avg_weights, cov)
     if risk_df.empty:
         risk_fig = empty_figure("Risk contribution unavailable.")
-        return conc_text, risk_fig, [], "No data for scenario.", "No data for macro shocks."
+        return conc_text, method_note, risk_fig, [], "No data for scenario.", "No data for macro shocks."
 
     risk_df["holding"] = risk_df.index
     risk_df["vol"] = np.sqrt(np.diag(cov))
@@ -223,4 +234,4 @@ def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value
 
     macro_msg = "Macro shocks shown as proxy scenarios (beta-based integration pending factor model)."
 
-    return conc_text, risk_fig, table_rows, shock_text, macro_msg
+    return conc_text, method_note, risk_fig, table_rows, shock_text, macro_msg

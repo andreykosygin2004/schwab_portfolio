@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 
 from analytics.attribution import build_pm_memo, factor_period_contributions, time_series_attribution, top_contributors
-from analytics.constants import ANALYSIS_END, ANALYSIS_START
+from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
 from analytics_macro import load_ticker_prices
@@ -16,7 +16,7 @@ from viz.plots import empty_figure
 dash.register_page(__name__, path="/attribution", name="Attribution")
 
 PORTFOLIO_SERIES = load_portfolio_series()
-DEFAULT_START = ANALYSIS_START
+DEFAULT_START = DEFAULT_START_DATE_ANALYSIS
 DEFAULT_END = ANALYSIS_END
 
 FACTOR_OPTIONS = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
@@ -55,7 +55,7 @@ layout = html.Div([
         ], style={"maxWidth": "240px"}),
         html.Div([
             html.Label("Top N"),
-            dcc.Input(id="attr-top-n", type="number", min=5, max=30, step=1, value=14),
+            dcc.Input(id="attr-top-n", type="number", min=5, max=30, step=1, value=16),
         ], style={"maxWidth": "120px"}),
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 

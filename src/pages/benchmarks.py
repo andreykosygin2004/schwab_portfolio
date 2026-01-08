@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from viz.plots import empty_figure
 from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
+from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 
 dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
 
@@ -125,7 +126,7 @@ layout = html.Div([
             id="bench-date-range",
             min_date_allowed=min(holdings_ts.index.min(), bench.index.min()),
             max_date_allowed=max(holdings_ts.index.max(), bench.index.max()),
-            start_date=max(holdings_ts.index.min(), bench.index.min()),
+            start_date=max(DEFAULT_START_DATE_ANALYSIS, min(holdings_ts.index.min(), bench.index.min())),
             end_date=min(holdings_ts.index.max(), bench.index.max()),
         ),
     ]),

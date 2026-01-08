@@ -19,6 +19,7 @@ from analytics_macro import (
     load_ticker_prices,
 )
 from analytics.portfolio import risk_free_warning
+from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 
 dash.register_page(__name__, path="/macro", name="Macro Analysis")
 
@@ -26,7 +27,7 @@ PORTFOLIO_SERIES = load_portfolio_series()
 PORTFOLIO_MIN = PORTFOLIO_SERIES.index.min()
 PORTFOLIO_MAX = PORTFOLIO_SERIES.index.max()
 DEFAULT_END = PORTFOLIO_MAX
-DEFAULT_START = max(PORTFOLIO_MIN, DEFAULT_END - pd.DateOffset(years=3))
+DEFAULT_START = max(PORTFOLIO_MIN, DEFAULT_START_DATE_ANALYSIS)
 
 PROXY_OPTIONS = ["TLT", "TIP", "GLD", "USO", "HYG", "LQD", "UUP"]
 DEFAULT_PROXIES = ["TLT", "TIP", "GLD", "USO", "HYG", "LQD"]

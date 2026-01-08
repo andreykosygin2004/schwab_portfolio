@@ -22,7 +22,7 @@ from analytics.regime_probability import (
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/regime-forecast", name="Regime Forecast")
+dash.register_page(__name__, path="/regime-forecast", name="Regime Forecaster")
 
 HORIZONS = [2, 3, 4]
 MODELS = ["Logistic Regression", "Gradient Boosting"]
@@ -43,42 +43,53 @@ layout = html.Div([
     html.H2("Regime Forecast"),
     html.P("Weekly probability of entering the selected regime within the chosen horizon."),
 
-    html.Div([
-        html.Div([
-            html.Label("Horizon (weeks)"),
-            dcc.Dropdown(
-                id="forecast-horizon",
-                options=[{"label": str(h), "value": h} for h in HORIZONS],
-                value=3,
-                clearable=False,
-                className="forecast-dropdown",
-            ),
-        ], style={"maxWidth": "200px"}),
-        html.Div([
-            html.Label("Model"),
-            dcc.Dropdown(
-                id="forecast-model",
-                options=[{"label": m, "value": m} for m in MODELS],
-                value="Logistic Regression",
-                clearable=False,
-                className="forecast-dropdown",
-            ),
-        ], style={"maxWidth": "260px"}),
-        html.Div([
-            html.Label("Target"),
-            dcc.Dropdown(
-                id="forecast-target",
-                options=[{"label": t, "value": t} for t in TARGETS],
-                value="Enter Risk-Off / Credit Stress",
-                clearable=False,
-                className="forecast-dropdown",
-            ),
-        ], style={"maxWidth": "280px"}),
-        html.Div([
-            html.Label("Data"),
-            dbc.Button("Hard refresh proxies", id="forecast-refresh", size="sm", color="secondary"),
+    dbc.Card(
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    html.Label("Horizon (weeks)"),
+                    dcc.Dropdown(
+                        id="forecast-horizon",
+                        options=[{"label": str(h), "value": h} for h in HORIZONS],
+                        value=3,
+                        clearable=False,
+                        className="forecast-dropdown",
+                    ),
+                ], xs=12, sm=6, md=3),
+                dbc.Col([
+                    html.Label("Model"),
+                    dcc.Dropdown(
+                        id="forecast-model",
+                        options=[{"label": m, "value": m} for m in MODELS],
+                        value="Logistic Regression",
+                        clearable=False,
+                        className="forecast-dropdown",
+                    ),
+                ], xs=12, sm=6, md=3),
+                dbc.Col([
+                    html.Label("Target"),
+                    dcc.Dropdown(
+                        id="forecast-target",
+                        options=[{"label": t, "value": t} for t in TARGETS],
+                        value="Enter Risk-Off / Credit Stress",
+                        clearable=False,
+                        className="forecast-dropdown",
+                    ),
+                ], xs=12, sm=6, md=4),
+                dbc.Col([
+                    html.Label("Data"),
+                    dbc.Button(
+                        "Hard refresh proxies",
+                        id="forecast-refresh",
+                        size="sm",
+                        color="secondary",
+                        style={"marginTop": "6px"},
+                    ),
+                ], xs=12, sm=6, md=2),
+            ], className="g-3"),
         ]),
-    ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
+        style={"borderRadius": "10px", "border": "1px solid #e6e9ee"},
+    ),
 
     html.Br(),
     html.Div(id="forecast-warning"),
@@ -86,6 +97,10 @@ layout = html.Div([
     html.Br(),
     dcc.Loading(dcc.Graph(id="forecast-prob")),
     html.Br(),
+    html.Div(id="forecast-latest-title"),
+    html.P(
+        "These are separate one-vs-rest event probabilities; they do not sum to 1 because events can overlap."
+    ),
     html.Div(id="forecast-latest-probs"),
     html.Br(),
     dcc.Loading(dcc.Graph(id="forecast-calibration")),
@@ -100,6 +115,7 @@ layout = html.Div([
     Output("forecast-metrics", "children"),
     Output("forecast-current", "children"),
     Output("forecast-warning", "children"),
+    Output("forecast-latest-title", "children"),
     Output("forecast-latest-probs", "children"),
     Input("forecast-horizon", "value"),
     Input("forecast-model", "value"),
@@ -118,25 +134,25 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
     )
     if latest is None:
         empty = empty_figure("No data available.")
-        return empty, empty, "No data available.", None, None
+        return empty, empty, "No data available.", None, None, None, None
 
     end = latest
     weekly_ret = make_weekly_returns(start, end)
     regimes = make_weekly_regimes(start, end)
     if weekly_ret.empty or regimes.empty:
         empty = empty_figure("No data available.")
-        return empty, empty, "No data available.", None, None, None
+        return empty, empty, "No data available.", None, None, None, None
 
     target_label = TARGET_LABELS.get(target_choice, "Risk-Off / Credit Stress")
     try:
         y = make_entry_event_label(regimes, target_label, horizon)
     except ValueError as exc:
         empty = empty_figure(str(exc))
-        return empty, empty, str(exc), None, None, None
+        return empty, empty, str(exc), None, None, None, None
     X_full = build_features(weekly_ret, regimes)
     if X_full.empty or y.empty:
         empty = empty_figure("No data available.")
-        return empty, empty, "No data available.", None, None, None
+        return empty, empty, "No data available.", None, None, None, None
 
     aligned = X_full.index.intersection(y.index)
     X = X_full.reindex(aligned).dropna()
@@ -148,7 +164,7 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
     split = split_by_time(split_base, y_split, splits)
     if split["X_train"].empty or split["X_test"].empty:
         empty = empty_figure("Insufficient data for splits.")
-        return empty, empty, "Insufficient data for splits.", None, None, None
+        return empty, empty, "Insufficient data for splits.", None, None, None, None
 
     model, scaler = train_model(split["X_train"], split["y_train"], model_name)
     probs = predict_proba(model, scaler, X_full.dropna())
@@ -161,7 +177,7 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
     metrics = evaluate_model(test_labels, test_probs)
 
     prob_fig = go.Figure()
-    prob_fig.add_trace(go.Scatter(x=probs.index, y=probs.values, name="P(Enter target in horizon)"))
+    prob_fig.add_trace(go.Scatter(x=probs.index, y=probs.values, name=f"P(Enter {target_label})"))
     regime_hits = regimes.reindex(probs.index)
     hit_idx = regime_hits[regime_hits == target_label].index
     if not hit_idx.empty:
@@ -220,6 +236,8 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
     if latest < (today - pd.Timedelta(days=7)):
         warning = dbc.Alert("Data not up to date. Click Refresh.", color="warning")
 
+    latest_title = html.Small(f"Latest probabilities ({model_name}, {horizon}w horizon)")
+
     latest_rows = []
     for choice, label in TARGET_LABELS.items():
         try:
@@ -249,4 +267,4 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
         size="sm",
     )
 
-    return prob_fig, calib_fig, metrics_text, current_card, warning, latest_table
+    return prob_fig, calib_fig, metrics_text, current_card, warning, latest_title, latest_table

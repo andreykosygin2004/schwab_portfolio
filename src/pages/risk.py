@@ -15,6 +15,7 @@ from analytics.risk import (
     rolling_var,
     var_cvar,
 )
+from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from analytics_macro import load_portfolio_series, load_ticker_prices
 from analytics.portfolio import risk_free_warning
 from viz.plots import empty_figure
@@ -25,7 +26,7 @@ PORTFOLIO_SERIES = load_portfolio_series()
 MIN_DATE = PORTFOLIO_SERIES.index.min()
 MAX_DATE = PORTFOLIO_SERIES.index.max()
 DEFAULT_END = MAX_DATE
-DEFAULT_START = max(MIN_DATE, DEFAULT_END - pd.DateOffset(years=3))
+DEFAULT_START = max(MIN_DATE, DEFAULT_START_DATE_ANALYSIS)
 
 BENCHMARK_OPTIONS = [
     {"label": "None", "value": "NONE"},

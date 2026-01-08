@@ -59,6 +59,7 @@ label {
   min-height: 38px;
   border-radius: 8px;
   border-color: var(--border-subtle);
+  background-color: #ffffff;
 }
 
 .forecast-dropdown .Select-placeholder,
@@ -72,6 +73,10 @@ label {
 .forecast-dropdown .Select-menu-outer {
   font-size: 14px;
   color: var(--text-primary);
+}
+
+.forecast-dropdown {
+  width: 100%;
 }
 
 .dash-graph {

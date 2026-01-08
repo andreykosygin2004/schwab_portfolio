@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from analytics.constants import ANALYSIS_END, ANALYSIS_START
+from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.portfolio import load_portfolio_series, risk_free_warning
 from analytics.regimes import (
     analysis_window,
@@ -36,7 +36,7 @@ FREQ_OPTIONS = ["Daily", "Weekly"]
 BENCHMARK_OPTIONS = ["SPY", "QQQ"]
 PRESETS = ["Conservative", "Balanced", "Aggressive"]
 
-DEFAULT_START = ANALYSIS_START
+DEFAULT_START = DEFAULT_START_DATE_ANALYSIS
 DEFAULT_END = ANALYSIS_END
 
 INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
@@ -100,7 +100,7 @@ layout = html.Div([
             dcc.RadioItems(
                 id="regime-frequency",
                 options=[{"label": f, "value": f} for f in FREQ_OPTIONS],
-                value="Daily",
+                value="Weekly",
                 inline=True,
             ),
         ], style={"maxWidth": "260px"}),

@@ -118,29 +118,7 @@ layout = html.Div([
     ),
     dcc.Loading(dcc.Graph(id="pv-rolling-vol-graph")
                 ),
-
     html.Br(),
-    html.Hr(),
-    html.Br(),
-    html.H3("General Overview (Price History)"),
-    html.Br(),
-    html.Label("Select Tickers:"),
-    dcc.Dropdown(
-        id="ticker-select",
-        options=[{"label": t, "value": t} for t in tickers],
-        value=[],
-        multi=True
-    ),
-    html.Br(),
-    html.Label("Select Date Range:"),
-    dcc.DatePickerRange(id="date-range",
-                        min_date_allowed=prices.index.min(),
-                        max_date_allowed=prices.index.max(),
-                        start_date=prices.index.min(),
-                        end_date=prices.index.max()
-    ),
-    html.Br(), html.Br(),
-    dcc.Loading(dcc.Graph(id="ticker-graph"))
 ])
 
 def fmt_metric_value(v):
@@ -306,29 +284,6 @@ def update_pv_clean_graph_and_metrics(start_date, end_date):
     rows = metrics_dict_to_rows(metrics_clean)
 
     return fig, rows
-
-
-@callback(
-    Output("ticker-graph", "figure"),
-    Input("ticker-select", "value"),
-    Input("date-range", "start_date"),
-    Input("date-range", "end_date")
-)
-def update_ticker_graph(selected_tickers, start_date, end_date):
-    if not selected_tickers:
-        return empty_figure("No tickers selected", height=GRAPH_HEIGHT)
-    
-    df = prices.loc[start_date:end_date, selected_tickers]
-    if df.dropna(how="all").empty:
-        return empty_figure("No data in selected range", height=GRAPH_HEIGHT)
-
-    fig = px.line(df, title="Selected Tickers")
-    fig.update_layout(legend_title_text="Tickers", height=GRAPH_HEIGHT)
-    fig.update_xaxes(title_text="Date")
-    fig.update_yaxes(title_text="Price")
-
-    return fig
-
 
 @callback(
     Output("pv-rolling-vol-graph", "figure"),

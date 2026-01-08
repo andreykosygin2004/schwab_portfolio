@@ -10,6 +10,7 @@ from analytics.factors import align_returns, factor_contributions, fit_ols, roll
 from analytics.risk import compute_returns
 from analytics_macro import load_portfolio_series, load_ticker_prices
 from analytics.portfolio import risk_free_warning
+from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/factors", name="Factor Attribution")
@@ -18,7 +19,7 @@ PORTFOLIO_SERIES = load_portfolio_series()
 MIN_DATE = PORTFOLIO_SERIES.index.min()
 MAX_DATE = PORTFOLIO_SERIES.index.max()
 DEFAULT_END = MAX_DATE
-DEFAULT_START = max(MIN_DATE, DEFAULT_END - pd.DateOffset(years=3))
+DEFAULT_START = max(MIN_DATE, DEFAULT_START_DATE_ANALYSIS)
 
 FACTOR_OPTIONS = ["SPY", "QQQ", "HYG", "LQD", "TLT", "TIP", "GLD", "USO", "UUP"]
 DEFAULT_FACTORS = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP"]
