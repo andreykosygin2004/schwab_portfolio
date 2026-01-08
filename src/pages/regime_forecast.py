@@ -28,12 +28,16 @@ HORIZONS = [2, 3, 4]
 MODELS = ["Logistic Regression", "Gradient Boosting"]
 TARGETS = [
     "Enter Risk-Off / Credit Stress",
+    "Enter Risk-On",
     "Enter Rates Shock",
+    "Enter Inflation Shock",
     "Enter Neutral / Compression",
 ]
 TARGET_LABELS = {
     "Enter Risk-Off / Credit Stress": "Risk-Off / Credit Stress",
+    "Enter Risk-On": "Risk-On",
     "Enter Rates Shock": "Rates Shock",
+    "Enter Inflation Shock": "Inflation Shock",
     "Enter Neutral / Compression": "Neutral / Transition",
 }
 

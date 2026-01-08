@@ -159,13 +159,6 @@ layout = html.Div([
     html.Br(),
     html.Hr(),
     html.Br(),
-    html.H3("Regime Return Distribution (Same Frequency)"),
-    html.Br(),
-    dcc.Loading(dcc.Graph(id="regime-dist")),
-
-    html.Br(),
-    html.Hr(),
-    html.Br(),
     html.H3("Overlay Simulator"),
     html.Br(),
     html.P("Overlay is simulated only. Charts below compare baseline vs overlay and benchmark-relative metrics."),
@@ -241,7 +234,6 @@ layout = html.Div([
     Output("regime-summary-table", "data"),
     Output("regime-warning", "children"),
     Output("regime-transition", "figure"),
-    Output("regime-dist", "figure"),
     Output("overlay-cumret", "figure"),
     Output("overlay-drawdown", "figure"),
     Output("overlay-weights", "figure"),
@@ -269,24 +261,24 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
     portfolio = PORTFOLIO_SERIES.loc[start:end].dropna()
     if portfolio.empty:
         empty = empty_figure("No data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
 
     prices = load_proxy_prices(start, end)
     if prices.empty:
         empty = empty_figure("No proxy data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
 
     features = compute_regime_features(prices, freq)
     labels = label_regimes(features, preset)
     labels = labels.reindex(features.index).dropna()
     if labels.empty:
         empty = empty_figure("No regime labels available.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
 
     equity = portfolio.reindex(labels.index).ffill().dropna()
     if equity.empty:
         empty = empty_figure("No aligned portfolio data.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, empty, [], "", [], []
+        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
 
     periods = 252 if freq == "Daily" else 52
     port_ret = returns_from_prices(equity, freq=freq)
@@ -338,18 +330,6 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
     if not trans.empty:
         transition_fig = px.imshow(trans, text_auto=".2f", title="Regime Transition Matrix")
         transition_fig.update_layout(height=400)
-
-    dist_fig = empty_figure("No return distribution.")
-    if not port_ret.empty:
-        dist_df = pd.DataFrame({"return": port_ret, "regime": labels.loc[port_ret.index]})
-        dist_fig = px.box(
-            dist_df,
-            x="regime",
-            y="return",
-            title="Return Distribution by Regime",
-        )
-        dist_fig.update_layout(height=400)
-        dist_fig.update_yaxes(tickformat=".1%")
 
     overlay_defaults = {
         "Conservative": {
@@ -520,7 +500,6 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
         summary_rows,
         regime_warning,
         transition_fig,
-        dist_fig,
         overlay_cum_fig,
         overlay_dd_fig,
         weights_fig,

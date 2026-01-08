@@ -177,6 +177,25 @@ layout = html.Div([
     html.Br(),
     html.Hr(),
     html.Br(),
+    html.H3("Macro Exposure Summary", style={"textAlign": "center"}),
+    html.Br(),
+    dash_table.DataTable(
+        id="macro-exposure-table",
+        columns=[
+            {"name": "Proxy", "id": "proxy"},
+            {"name": "Correlation", "id": "corr"},
+            {"name": "Beta", "id": "beta"},
+            {"name": "R^2", "id": "r2"},
+            {"name": "Proxy 3M Return", "id": "ret_3m"},
+            {"name": "Proxy Ann. Vol", "id": "ann_vol"},
+        ],
+        style_table={"overflowX": "auto"},
+        style_cell={"textAlign": "left", "padding": "6px"},
+    ),
+
+    html.Br(),
+    html.Hr(),
+    html.Br(),
     html.H3("Rates / Inflation / Credit"),
     html.Br(),
     html.P(
@@ -203,52 +222,11 @@ layout = html.Div([
     html.H3("Commodities / USD / Risk Sentiment"),
     html.Br(),
     html.P(
-        "Correlations show how the portfolio tracks macro proxies, while the scatter plot "
-        "quantifies sensitivity to a selected driver."
+        "Correlations show how the portfolio tracks macro proxies and broad risk sentiment."
     ),
     dcc.Loading(dcc.Graph(id="macro-heatmap", style=GRAPH_STYLE, config={"responsive": False})),
-    html.Div([
-        html.Div([
-            html.Label("Scatter proxy"),
-            dcc.Dropdown(id="macro-scatter-proxy", options=[], value=None, clearable=False),
-        ], style={"maxWidth": "220px"}),
-    ]),
-    dcc.Loading(dcc.Graph(id="macro-scatter", style=GRAPH_STYLE, config={"responsive": False})),
-
-    html.Br(),
-    html.Hr(),
-    html.Br(),
-    html.H3("Macro Exposure Summary"),
-    html.Br(),
-    dash_table.DataTable(
-        id="macro-exposure-table",
-        columns=[
-            {"name": "Proxy", "id": "proxy"},
-            {"name": "Correlation", "id": "corr"},
-            {"name": "Beta", "id": "beta"},
-            {"name": "R^2", "id": "r2"},
-            {"name": "Proxy 3M Return", "id": "ret_3m"},
-            {"name": "Proxy Ann. Vol", "id": "ann_vol"},
-        ],
-        style_table={"overflowX": "auto"},
-        style_cell={"textAlign": "left", "padding": "6px"},
-    ),
 ])
 
-
-@callback(
-    Output("macro-scatter-proxy", "options"),
-    Output("macro-scatter-proxy", "value"),
-    Input("macro-proxies", "value"),
-    Input("macro-scatter-proxy", "value"),
-)
-def update_scatter_options(selected_proxies, current_value):
-    selected_proxies = selected_proxies or []
-    options = [{"label": t, "value": t} for t in selected_proxies]
-    if current_value in selected_proxies:
-        return options, current_value
-    value = selected_proxies[0] if selected_proxies else None
-    return options, value
 
 
 @callback(
@@ -263,16 +241,14 @@ def update_scatter_options(selected_proxies, current_value):
     Output("macro-rates-chart", "figure"),
     Output("macro-rates-table", "data"),
     Output("macro-heatmap", "figure"),
-    Output("macro-scatter", "figure"),
     Output("macro-exposure-table", "data"),
     Input("macro-date-range", "start_date"),
     Input("macro-date-range", "end_date"),
     Input("macro-frequency", "value"),
     Input("macro-benchmark", "value"),
     Input("macro-proxies", "value"),
-    Input("macro-scatter-proxy", "value"),
 )
-def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies, scatter_proxy):
+def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     proxies = proxies or []
@@ -283,7 +259,7 @@ def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies, scatt
         return (
             empty, empty, empty, empty,
             "Rolling vol: n/a", "Rolling corr: n/a", "Rolling beta: n/a", "Max drawdown: n/a",
-            empty, [], empty, empty, [],
+            empty, [], empty, [],
         )
 
     benchmark_prices = load_ticker_prices([benchmark], start=start, end=end)
@@ -433,33 +409,6 @@ def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies, scatt
         )
         heatmap_fig.update_layout(height=420, autosize=False)
 
-    # Scatter vs selected proxy
-    if scatter_proxy and scatter_proxy in proxy_prices.columns:
-        proxy_ret = compute_returns(proxy_prices[scatter_proxy], freq)
-        aligned = pd.concat([port_ret, proxy_ret], axis=1).dropna()
-        if not aligned.empty:
-            slope, r2 = beta_and_r2(aligned.iloc[:, 0], aligned.iloc[:, 1])
-            intercept = aligned.iloc[:, 0].mean() - slope * aligned.iloc[:, 1].mean()
-            x_vals = aligned.iloc[:, 1]
-            y_vals = aligned.iloc[:, 0]
-            line_x = np.linspace(x_vals.min(), x_vals.max(), 50)
-            line_y = slope * line_x + intercept
-            scatter_fig = go.Figure()
-            scatter_fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode="markers", name="Returns"))
-            scatter_fig.add_trace(go.Scatter(x=line_x, y=line_y, mode="lines", name="Regression"))
-            scatter_fig.update_layout(
-                title=f"Portfolio vs {scatter_proxy} (beta {slope:.2f}, R^2 {r2:.2f})",
-                xaxis_title=f"{scatter_proxy} returns",
-                yaxis_title="Portfolio returns",
-                height=420,
-                autosize=False,
-            )
-        else:
-            scatter_fig = _empty_fig("Not enough data for scatter plot.")
-    else:
-        scatter_fig = _empty_fig("Select a proxy for scatter analysis.")
-    scatter_fig.update_layout(height=420, autosize=False)
-
     # Exposure summary table
     exposure_rows = []
     for col in proxy_prices.columns:
@@ -499,6 +448,5 @@ def update_macro_dashboard(start_date, end_date, freq, benchmark, proxies, scatt
         rates_fig,
         rates_rows,
         heatmap_fig,
-        scatter_fig,
         exposure_rows,
     )

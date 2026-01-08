@@ -147,8 +147,6 @@ layout = html.Div([
         style_table={"overflowX": "auto"},
         style_cell={"textAlign": "left", "padding": "6px"},
     ),
-    html.Br(),
-    dcc.Loading(dcc.Graph(id="drawdown-scatter")),
 
     html.Br(),
     html.Hr(),
@@ -175,7 +173,6 @@ layout = html.Div([
     Output("risk-calmar-metric", "children"),
     Output("underwater-graph", "figure"),
     Output("drawdown-table", "data"),
-    Output("drawdown-scatter", "figure"),
     Output("var-rolling-graph", "figure"),
     Output("var-summary", "children"),
     Input("risk-date-range", "start_date"),
@@ -196,7 +193,6 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
             "n/a",
             empty,
             [],
-            empty,
             empty,
             "No data available.",
         )
@@ -244,7 +240,6 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
         if pd.notna(dd_min) and pd.notna(ep_min) and not np.isclose(dd_min, ep_min, atol=1e-6):
             print(f"[WARN] Drawdown mismatch: series {dd_min:.6f} vs episodes {ep_min:.6f}")
     rows = []
-    scatter_rows = []
     for ep in episodes:
         recovery = ep["recovery"]
         rows.append({
@@ -256,23 +251,6 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
             "periods_to_recovery": ep["recovery_time"] if ep["recovery_time"] is not None else "n/a",
             "total_periods": ep["total_duration"],
         })
-        scatter_rows.append({
-            "depth": abs(ep["depth"]),
-            "duration": ep["duration_to_trough"],
-        })
-
-    scatter_fig = empty_figure("No drawdown episodes to display.")
-    if scatter_rows:
-        df_scatter = pd.DataFrame(scatter_rows)
-        scatter_fig = px.scatter(
-            df_scatter,
-            x="duration",
-            y="depth",
-            title="Drawdown Depth vs Duration to Trough",
-        )
-        scatter_fig.update_layout(height=350)
-        scatter_fig.update_yaxes(title_text="Depth", tickformat=".1%")
-        scatter_fig.update_xaxes(title_text="Periods to Trough")
 
     var_alpha = 0.05
     var_95, cvar_95 = var_cvar(port_ret, alpha=var_alpha)
@@ -299,7 +277,6 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
         f"{calmar:.2f}" if pd.notna(calmar) else "n/a",
         dd_fig,
         rows,
-        scatter_fig,
         var_fig,
         var_summary,
     )
