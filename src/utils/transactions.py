@@ -37,11 +37,36 @@ def _price_on_or_before(prices: pd.Series, date: pd.Timestamp) -> tuple[float | 
     return float(prior.iloc[-1]), "prior"
 
 
+def build_starting_positions_from_mv(
+    mv_df: pd.DataFrame,
+    prices: pd.DataFrame,
+    start: pd.Timestamp,
+) -> pd.Series:
+    if mv_df.empty or prices.empty:
+        return pd.Series(dtype=float)
+    mv_df = mv_df.copy()
+    mv_df.columns = [c.replace("MV_", "") for c in mv_df.columns]
+    mv_df = mv_df.sort_index()
+    mv_slice = mv_df.loc[:start]
+    if mv_slice.empty:
+        return pd.Series(dtype=float)
+    mv_row = mv_slice.iloc[-1].fillna(0.0)
+    shares = {}
+    for symbol, mv in mv_row.items():
+        if mv <= 0 or symbol not in prices.columns:
+            continue
+        price_used, _ = _price_on_or_before(prices[symbol].dropna(), start)
+        if price_used and price_used > 0:
+            shares[symbol] = mv / price_used
+    return pd.Series(shares)
+
+
 def build_positions_from_transactions(
     transactions: pd.DataFrame,
     prices: pd.DataFrame,
     start: pd.Timestamp,
     end: pd.Timestamp,
+    starting_positions: pd.Series | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if transactions.empty or prices.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -113,6 +138,10 @@ def build_positions_from_transactions(
 
     idx = prices.loc[start:end].index
     positions = pd.DataFrame(0.0, index=idx, columns=prices.columns)
+    if starting_positions is not None and not starting_positions.empty:
+        for symbol, shares in starting_positions.items():
+            if symbol in positions.columns and shares > 0:
+                positions.iloc[0, positions.columns.get_loc(symbol)] = shares
     for _, ev in events_df.iterrows():
         if ev["Date"] not in positions.index:
             # Align to prior trading day (never future).
@@ -127,3 +156,71 @@ def build_positions_from_transactions(
     positions = positions.cumsum()
     positions = positions.clip(lower=0.0)
     return positions, pd.DataFrame(debug_rows)
+
+
+def compute_cycle_returns(
+    transactions: pd.DataFrame,
+    prices: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> pd.Series:
+    if transactions.empty or prices.empty:
+        return pd.Series(dtype=float)
+
+    tx = transactions.copy()
+    tx["Date"] = pd.to_datetime(tx["Date"], errors="coerce")
+    tx = tx.dropna(subset=["Date"])
+    tx = tx[(tx["Date"] >= start) & (tx["Date"] <= end)]
+    tx["Quantity"] = tx.get("Quantity", pd.Series(dtype=float)).apply(_to_number)
+    tx["Price"] = tx.get("Price", pd.Series(dtype=float)).apply(_to_number)
+    tx["Amount"] = tx.get("Amount", pd.Series(dtype=float)).apply(_to_number)
+    tx["Action"] = tx["Action"].astype(str)
+    tx = tx[tx["Symbol"].notna()]
+    tx = tx[tx["Action"].str.lower().isin(["buy", "sell"])]
+    if tx.empty:
+        return pd.Series(dtype=float)
+
+    returns = {}
+    for symbol in tx["Symbol"].unique():
+        if symbol not in prices.columns:
+            continue
+        sym_tx = tx[tx["Symbol"] == symbol].sort_values("Date")
+        lots = []
+        total_cost = 0.0
+        realized_pnl = 0.0
+        for _, row in sym_tx.iterrows():
+            action = row["Action"].strip().lower()
+            date = row["Date"]
+            qty = row["Quantity"]
+            price_used, _ = _price_on_or_before(prices[symbol].dropna(), date)
+            if price_used is None:
+                continue
+            if pd.notna(qty) and qty != 0:
+                shares = int(abs(qty))
+            else:
+                shares, _, _ = infer_shares_from_amount(row["Amount"], price_used)
+            if shares <= 0:
+                continue
+            if action == "buy":
+                lots.append({"shares": shares, "price": price_used})
+                total_cost += shares * price_used
+            else:
+                remaining = shares
+                while remaining > 0 and lots:
+                    lot = lots[0]
+                    take = min(remaining, lot["shares"])
+                    realized_pnl += take * (price_used - lot["price"])
+                    lot["shares"] -= take
+                    remaining -= take
+                    if lot["shares"] == 0:
+                        lots.pop(0)
+        # Unrealized on remaining lots to end date.
+        end_price, _ = _price_on_or_before(prices[symbol].dropna(), end)
+        if end_price is not None:
+            for lot in lots:
+                realized_pnl += lot["shares"] * (end_price - lot["price"])
+                total_cost += lot["shares"] * lot["price"]
+        if total_cost > 0:
+            returns[symbol] = realized_pnl / total_cost
+
+    return pd.Series(returns)

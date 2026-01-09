@@ -16,7 +16,11 @@ from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
 from analytics_macro import load_ticker_prices
 from analytics.portfolio import load_portfolio_series, risk_free_warning
-from utils.transactions import build_positions_from_transactions
+from utils.transactions import (
+    build_positions_from_transactions,
+    build_starting_positions_from_mv,
+    compute_cycle_returns,
+)
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/attribution", name="Attribution")
@@ -179,7 +183,8 @@ def update_attribution(start_date, end_date, freq, top_n):
             total_value = total_value.resample("W-FRI").last()
 
     attr_df = time_series_attribution(mv_df, price_slice, total_value) if not mv_df.empty else pd.DataFrame()
-    positions, debug_df = build_positions_from_transactions(transactions, price_slice, start, end)
+    starting_positions = build_starting_positions_from_mv(mv_df, price_slice, start)
+    positions, debug_df = build_positions_from_transactions(transactions, price_slice, start, end, starting_positions)
     debug_rows = debug_df.to_dict("records") if not debug_df.empty else []
     if not debug_df.empty:
         low_conf = (debug_df["confidence"] == "low").mean()
@@ -206,6 +211,10 @@ def update_attribution(start_date, end_date, freq, top_n):
         })
         attr_df["pct_total"] = attr_df["contribution"] / attr_df["contribution"].sum() if attr_df["contribution"].sum() != 0 else 0.0
         warning = "Using transaction-inferred positions (buy/sell cycles tracked)."
+
+        cycle_returns = compute_cycle_returns(transactions, price_slice, start, end)
+        if not cycle_returns.empty:
+            attr_df["total_return"] = attr_df.index.to_series().map(cycle_returns).combine_first(attr_df["total_return"])
     if attr_df.empty:
         latest = df[mv_cols].iloc[-1].fillna(0.0) if mv_cols else pd.Series(dtype=float)
         total = latest.sum()
