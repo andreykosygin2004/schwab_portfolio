@@ -26,6 +26,7 @@ MIN_DATE = PORTFOLIO_SERIES.index.min()
 MAX_DATE = PORTFOLIO_SERIES.index.max()
 DEFAULT_END = MAX_DATE
 DEFAULT_START = max(MIN_DATE, DEFAULT_START_DATE_ANALYSIS)
+EXECUTION_DEFAULT = pd.Timestamp.now(tz="America/New_York").normalize().replace(day=1)
 
 
 layout = html.Div([
@@ -127,6 +128,41 @@ layout = html.Div([
                     ),
                 ], xs=12, md=3),
             ], className="g-3"),
+            dbc.Row([
+                dbc.Col([
+                    html.Label("Blotter Mode"),
+                    dcc.RadioItems(
+                        id="rotation-blotter-mode",
+                        options=[
+                            {"label": "Backtest timeline", "value": "backtest"},
+                            {"label": "Execution timeline", "value": "execution"},
+                        ],
+                        value="backtest",
+                        inline=True,
+                    ),
+                ], xs=12, md=5),
+                dbc.Col([
+                    html.Label("Execution Start Date"),
+                    dcc.DatePickerSingle(
+                        id="rotation-exec-date",
+                        min_date_allowed=MIN_DATE,
+                        max_date_allowed=MAX_DATE,
+                        date=EXECUTION_DEFAULT.date(),
+                    ),
+                ], xs=12, md=4),
+                dbc.Col([
+                    html.Label("Current Sleeve Weights"),
+                    dcc.Dropdown(
+                        id="rotation-current-weights",
+                        options=[
+                            {"label": "Zero (new sleeve)", "value": "zero"},
+                            {"label": "Last target weights", "value": "last"},
+                        ],
+                        value="zero",
+                        clearable=False,
+                    ),
+                ], xs=12, md=3),
+            ], className="g-3"),
         ]),
         style={"borderRadius": "10px", "border": "1px solid #e6e9ee"},
     ),
@@ -150,6 +186,7 @@ layout = html.Div([
     html.H4("Trade Blotter (Suggested Monthly Rebalance Trades)"),
     html.Br(),
     html.P("Trades are based on target weights; transaction costs are applied in the sleeve backtest."),
+    html.Div(id="rotation-blotter-note", style={"color": "#5b6675", "marginBottom": "6px"}),
     dbc.Button("Download CSV", id="rotation-download-btn", size="sm", color="secondary"),
     dcc.Download(id="rotation-download"),
     dash_table.DataTable(
@@ -175,6 +212,7 @@ layout = html.Div([
     Output("rotation-summary", "data"),
     Output("rotation-attrib", "figure"),
     Output("rotation-blotter", "data"),
+    Output("rotation-blotter-note", "children"),
     Input("rotation-date-range", "start_date"),
     Input("rotation-date-range", "end_date"),
     Input("rotation-smooth", "value"),
@@ -184,8 +222,24 @@ layout = html.Div([
     Input("rotation-alloc", "value"),
     Input("rotation-options", "value"),
     Input("rotation-notional", "value"),
+    Input("rotation-blotter-mode", "value"),
+    Input("rotation-exec-date", "date"),
+    Input("rotation-current-weights", "value"),
 )
-def update_factor_rotation(start_date, end_date, smooth_lambda, max_weight, tc_bps, benchmark, alloc, options, notional):
+def update_factor_rotation(
+    start_date,
+    end_date,
+    smooth_lambda,
+    max_weight,
+    tc_bps,
+    benchmark,
+    alloc,
+    options,
+    notional,
+    blotter_mode,
+    exec_date,
+    current_weights_mode,
+):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     options = options or []
@@ -194,7 +248,7 @@ def update_factor_rotation(start_date, end_date, smooth_lambda, max_weight, tc_b
     prices = load_ticker_prices(ETF_UNIVERSE, start=start, end=end)
     if prices.empty:
         empty = empty_figure("No data available for selected range.")
-        return empty, empty, [], empty, []
+        return empty, empty, [], empty, [], None
 
     regime_labels = None
     if "regime" in options:
@@ -213,7 +267,7 @@ def update_factor_rotation(start_date, end_date, smooth_lambda, max_weight, tc_b
     results = backtest_rotation(prices, params, regime_labels)
     if not results:
         empty = empty_figure("Not enough data to compute signals.")
-        return empty, empty, [], empty, []
+        return empty, empty, [], empty, [], None
 
     weights = results["weights"]
     returns = results["returns"]
@@ -274,22 +328,71 @@ def update_factor_rotation(start_date, end_date, smooth_lambda, max_weight, tc_b
         contrib_fig.update_yaxes(tickformat=".1%")
 
     blotter_rows = []
-    weights_diff = weights.diff().fillna(weights.iloc[0])
-    for dt, row in weights_diff.iterrows():
-        for asset, delta in row.items():
-            prior = weights.loc[dt, asset] - delta
+    sleeve_notional = float(notional or 0.0) * float(alloc or 0.0)
+    blotter_note = "Backtest uses full history; blotter shows the backtest rebalance timeline."
+
+    if blotter_mode == "execution":
+        blotter_note = "Backtest uses full history; blotter is filtered for execution starting at the selected date."
+        exec_ts = pd.to_datetime(exec_date) if exec_date else EXECUTION_DEFAULT
+        last_reb = weights.index[weights.index <= exec_ts].max() if not weights.empty else None
+        if last_reb is None or pd.isna(last_reb):
+            last_reb = weights.index.min()
+        target = weights.loc[last_reb]
+        if current_weights_mode == "last":
+            prior_weights = target.copy()
+        else:
+            prior_weights = pd.Series(0.0, index=target.index)
+
+        init_trade = target - prior_weights
+        for asset, delta in init_trade.items():
             side = "Buy" if delta > 0 else "Sell" if delta < 0 else "Hold"
             blotter_rows.append({
-                "date": dt.date().isoformat(),
+                "date": exec_ts.date().isoformat(),
                 "asset": asset,
-                "prior_weight": f"{prior:.2%}",
-                "target_weight": f"{weights.loc[dt, asset]:.2%}",
+                "prior_weight": f"{prior_weights[asset]:.2%}",
+                "target_weight": f"{target[asset]:.2%}",
                 "trade": f"{delta:.2%}",
                 "side": side,
-                "dollar": f"{delta * notional:,.0f}",
+                "dollar": f"{delta * sleeve_notional:,.0f}",
             })
 
-    return weights_fig, equity_fig, summary, contrib_fig, blotter_rows
+        future_dates = weights.index[weights.index > last_reb]
+        if future_dates.empty:
+            blotter_note += " No future rebalance dates available yet."
+        else:
+            prev = target
+            for dt in future_dates:
+                target_next = weights.loc[dt]
+                delta = target_next - prev
+                for asset, change in delta.items():
+                    side = "Buy" if change > 0 else "Sell" if change < 0 else "Hold"
+                    blotter_rows.append({
+                        "date": dt.date().isoformat(),
+                        "asset": asset,
+                        "prior_weight": f"{prev[asset]:.2%}",
+                        "target_weight": f"{target_next[asset]:.2%}",
+                        "trade": f"{change:.2%}",
+                        "side": side,
+                        "dollar": f"{change * sleeve_notional:,.0f}",
+                    })
+                prev = target_next
+    else:
+        weights_diff = weights.diff().fillna(weights.iloc[0])
+        for dt, row in weights_diff.iterrows():
+            for asset, delta in row.items():
+                prior = weights.loc[dt, asset] - delta
+                side = "Buy" if delta > 0 else "Sell" if delta < 0 else "Hold"
+                blotter_rows.append({
+                    "date": dt.date().isoformat(),
+                    "asset": asset,
+                    "prior_weight": f"{prior:.2%}",
+                    "target_weight": f"{weights.loc[dt, asset]:.2%}",
+                    "trade": f"{delta:.2%}",
+                    "side": side,
+                    "dollar": f"{delta * sleeve_notional:,.0f}",
+                })
+
+    return weights_fig, equity_fig, summary, contrib_fig, blotter_rows, blotter_note
 
 
 @callback(

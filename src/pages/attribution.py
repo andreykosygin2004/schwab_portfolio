@@ -1,5 +1,5 @@
 import dash
-from dash import html, dcc, Input, Output, callback, dash_table
+from dash import html, dcc, Input, Output, State, callback, dash_table
 import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
@@ -7,7 +7,6 @@ import plotly.express as px
 
 from analytics.attribution import (
     build_pm_memo,
-    compute_trade_based_returns,
     factor_period_contributions,
     time_series_attribution,
     top_contributors,
@@ -17,6 +16,7 @@ from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
 from analytics_macro import load_ticker_prices
 from analytics.portfolio import load_portfolio_series, risk_free_warning
+from utils.transactions import build_positions_from_transactions
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/attribution", name="Attribution")
@@ -84,6 +84,28 @@ layout = html.Div([
         style_table={"overflowX": "auto"},
         style_cell={"textAlign": "left", "padding": "6px"},
     ),
+    html.Br(),
+    dbc.Button("Show transaction inference", id="attr-debug-toggle", size="sm", color="secondary"),
+    dbc.Collapse(
+        dash_table.DataTable(
+            id="attr-debug-table",
+            columns=[
+                {"name": "Date", "id": "date"},
+                {"name": "Symbol", "id": "symbol"},
+                {"name": "Action", "id": "action"},
+                {"name": "Amount", "id": "amount"},
+                {"name": "Price Used", "id": "price_used"},
+                {"name": "Implied Fill", "id": "implied_fill"},
+                {"name": "Shares", "id": "inferred_shares"},
+                {"name": "Confidence", "id": "confidence"},
+                {"name": "Price Source", "id": "price_source"},
+            ],
+            style_table={"overflowX": "auto"},
+            style_cell={"textAlign": "left", "padding": "6px"},
+        ),
+        id="attr-debug-collapse",
+        is_open=False,
+    ),
 
     html.Br(),
     html.Hr(),
@@ -107,6 +129,7 @@ layout = html.Div([
     Output("attr-holdings-warning", "children"),
     Output("attr-holdings-bar", "figure"),
     Output("attr-holdings-table", "data"),
+    Output("attr-debug-table", "data"),
     Output("attr-factor-bars", "figure"),
     Output("attr-factor-cum", "figure"),
     Output("attr-memo", "children"),
@@ -127,7 +150,7 @@ def update_attribution(start_date, end_date, freq, top_n):
     df = holdings_ts.loc[start:end]
     if df.empty:
         empty = empty_figure("No data available.")
-        return "No data available.", empty, [], empty, empty, []
+        return "No data available.", empty, [], [], empty, empty, []
 
     mv_cols = [c for c in df.columns if c.startswith("MV_")]
     warning = ""
@@ -140,20 +163,49 @@ def update_attribution(start_date, end_date, freq, top_n):
     if "total_value_clean_rf" in df.columns:
         total_value = df["total_value_clean_rf"].copy()
 
+    debug_rows = []
+    mv_df = pd.DataFrame()
+    price_slice = pd.DataFrame()
     if mv_cols:
         mv_df = df[mv_cols]
-        price_slice = price_hist.loc[start:end, price_hist.columns.intersection([c.replace("MV_", "") for c in mv_cols])]
+        tickers = [c.replace("MV_", "") for c in mv_cols]
+        price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
         if price_slice.empty:
             empty = empty_figure("No price data.")
-            return warning, empty, [], empty, empty, []
+            return warning, empty, [], [], empty, empty, []
         if freq == "Weekly":
             mv_df = mv_df.resample("W-FRI").last()
             price_slice = price_slice.resample("W-FRI").last()
             total_value = total_value.resample("W-FRI").last()
-    attr_df = time_series_attribution(mv_df, price_slice, total_value)
-    trade_returns = compute_trade_based_returns(transactions, price_slice, start, end)
-    if not trade_returns.empty:
-        attr_df["total_return"] = attr_df.index.to_series().map(trade_returns).combine_first(attr_df["total_return"])
+
+    attr_df = time_series_attribution(mv_df, price_slice, total_value) if not mv_df.empty else pd.DataFrame()
+    positions, debug_df = build_positions_from_transactions(transactions, price_slice, start, end)
+    debug_rows = debug_df.to_dict("records") if not debug_df.empty else []
+    if not debug_df.empty:
+        low_conf = (debug_df["confidence"] == "low").mean()
+        if low_conf > 0.3:
+            warning = f"{warning} Low confidence on {low_conf:.0%} of inferred trades."
+    if not positions.empty:
+        prices_aligned = price_slice.reindex(positions.index).ffill()
+        if freq == "Weekly":
+            positions = positions.resample("W-FRI").last()
+            prices_aligned = prices_aligned.resample("W-FRI").last()
+        returns = prices_aligned.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        mv = positions * prices_aligned
+        total = mv.sum(axis=1).replace(0, np.nan)
+        weights = mv.div(total, axis=0).fillna(0.0)
+        weights_lag = weights.shift(1).fillna(0.0)
+        contrib = weights_lag * returns
+        total_contrib = contrib.sum(axis=0)
+        avg_weight = weights_lag.mean(axis=0)
+        total_return = (1 + returns).prod() - 1
+        attr_df = pd.DataFrame({
+            "avg_weight": avg_weight,
+            "total_return": total_return,
+            "contribution": total_contrib,
+        })
+        attr_df["pct_total"] = attr_df["contribution"] / attr_df["contribution"].sum() if attr_df["contribution"].sum() != 0 else 0.0
+        warning = "Using transaction-inferred positions (buy/sell cycles tracked)."
     if attr_df.empty:
         latest = df[mv_cols].iloc[-1].fillna(0.0) if mv_cols else pd.Series(dtype=float)
         total = latest.sum()
@@ -162,7 +214,7 @@ def update_attribution(start_date, end_date, freq, top_n):
         price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
         if price_slice.empty:
             empty = empty_figure("No price data.")
-            return warning, empty, [], empty, empty, []
+            return warning, empty, [], debug_rows, empty, empty, []
         returns = returns_from_prices(price_slice, freq=freq)
         total_ret = (1 + returns).prod() - 1
         contrib = weights * total_ret
@@ -175,7 +227,7 @@ def update_attribution(start_date, end_date, freq, top_n):
 
     if attr_df.empty:
         empty = empty_figure("Attribution unavailable.")
-        return warning or "Attribution unavailable.", empty, [], empty, empty, []
+        return warning or "Attribution unavailable.", empty, [], debug_rows, empty, empty, []
 
     contrib_top = top_contributors(attr_df["contribution"], top_n)
     attr_top = attr_df.loc[contrib_top.index]
@@ -242,4 +294,15 @@ def update_attribution(start_date, end_date, freq, top_n):
             })
 
     memo_list = [html.Li(m) for m in memo] if memo else [html.Li("No memo available for selected window.")]
-    return warning, bar_fig, table_rows, factor_bars, factor_cum, memo_list
+    return warning, bar_fig, table_rows, debug_rows, factor_bars, factor_cum, memo_list
+
+
+@callback(
+    Output("attr-debug-collapse", "is_open"),
+    Input("attr-debug-toggle", "n_clicks"),
+    State("attr-debug-collapse", "is_open"),
+)
+def toggle_attr_debug(n_clicks, is_open):
+    if not n_clicks:
+        return is_open
+    return not is_open
