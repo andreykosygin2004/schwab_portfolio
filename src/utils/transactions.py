@@ -61,12 +61,40 @@ def build_starting_positions_from_mv(
     return pd.Series(shares)
 
 
+def _split_map(splits: pd.DataFrame | None) -> dict[str, list[tuple[pd.Timestamp, float]]]:
+    if splits is None or splits.empty:
+        return {}
+    df = splits.copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df = df.dropna(subset=["date"])
+    df["Ticker"] = df["Ticker"].astype(str)
+    out: dict[str, list[tuple[pd.Timestamp, float]]] = {}
+    for _, row in df.iterrows():
+        out.setdefault(row["Ticker"], []).append((row["date"], float(row["split_ratio"])))
+    for key in out:
+        out[key] = sorted(out[key], key=lambda x: x[0])
+    return out
+
+
+def _cumulative_split_ratio(
+    split_events: list[tuple[pd.Timestamp, float]],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> float:
+    ratio = 1.0
+    for dt, split_ratio in split_events:
+        if start < dt <= end:
+            ratio *= split_ratio
+    return ratio
+
+
 def build_positions_from_transactions(
     transactions: pd.DataFrame,
     prices: pd.DataFrame,
     start: pd.Timestamp,
     end: pd.Timestamp,
     starting_positions: pd.Series | None = None,
+    splits: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     if transactions.empty or prices.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -90,6 +118,7 @@ def build_positions_from_transactions(
 
     debug_rows = []
     share_events = []
+    split_events = _split_map(splits)
     for _, row in tx.iterrows():
         symbol = row["Symbol"]
         action = row["Action"].strip().lower()
@@ -97,14 +126,27 @@ def build_positions_from_transactions(
         if symbol not in prices.columns:
             continue
         price_series = prices[symbol].dropna()
-        price_used, source = _price_on_or_before(price_series, date)
-        if price_used is None:
-            warnings.warn(f"[WARN] Missing price for {symbol} around {date.date()}")
-            continue
+        factor_end = _cumulative_split_ratio(split_events.get(symbol, []), date, end)
+        price_used = row["Price"]
+        source = "transaction"
+        if pd.isna(price_used):
+            adj_price, source = _price_on_or_before(price_series, date)
+            if adj_price is None:
+                warnings.warn(f"[WARN] Missing price for {symbol} around {date.date()}")
+                continue
+            price_used = float(adj_price) * factor_end
 
         qty = row["Quantity"]
         amount = row["Amount"]
+        use_qty = False
         if pd.notna(qty) and qty != 0:
+            est_amount = abs(qty) * price_used
+            if pd.notna(amount) and est_amount > 0:
+                if abs(est_amount - abs(amount)) / est_amount <= 0.05:
+                    use_qty = True
+            else:
+                use_qty = True
+        if use_qty:
             shares = int(abs(qty))
             implied_fill = price_used
             confidence = True
@@ -154,6 +196,19 @@ def build_positions_from_transactions(
         positions.loc[date, ev["Symbol"]] += ev["Shares"]
 
     positions = positions.cumsum()
+    split_events = _split_map(splits)
+    if split_events:
+        for symbol, events in split_events.items():
+            if symbol not in positions.columns:
+                continue
+            for split_date, ratio in events:
+                if ratio == 1 or pd.isna(ratio):
+                    continue
+                idx_dates = positions.index[positions.index <= split_date]
+                if idx_dates.empty:
+                    continue
+                adj_date = idx_dates[-1]
+                positions.loc[adj_date:, symbol] = positions.loc[adj_date:, symbol] * ratio
     positions = positions.clip(lower=0.0)
     return positions, pd.DataFrame(debug_rows)
 
@@ -163,6 +218,7 @@ def compute_cycle_returns(
     prices: pd.DataFrame,
     start: pd.Timestamp,
     end: pd.Timestamp,
+    splits: pd.DataFrame | None = None,
 ) -> pd.Series:
     if transactions.empty or prices.empty:
         return pd.Series(dtype=float)
@@ -181,46 +237,326 @@ def compute_cycle_returns(
         return pd.Series(dtype=float)
 
     returns = {}
+    split_events = _split_map(splits)
     for symbol in tx["Symbol"].unique():
         if symbol not in prices.columns:
             continue
         sym_tx = tx[tx["Symbol"] == symbol].sort_values("Date")
         lots = []
-        total_cost = 0.0
-        realized_pnl = 0.0
+        lot_multiples = []
+        last_date: pd.Timestamp | None = None
+        events = split_events.get(symbol, [])
+
+        def apply_splits(to_date: pd.Timestamp) -> None:
+            nonlocal last_date, lots
+            if not events:
+                last_date = to_date
+                return
+            if last_date is None:
+                last_date = to_date
+                return
+            for dt, ratio in events:
+                if last_date < dt <= to_date:
+                    for lot in lots:
+                        lot["shares"] *= ratio
+                        lot["cost_per_share"] /= ratio
+            last_date = to_date
+
         for _, row in sym_tx.iterrows():
             action = row["Action"].strip().lower()
             date = row["Date"]
             qty = row["Quantity"]
-            price_used, _ = _price_on_or_before(prices[symbol].dropna(), date)
-            if price_used is None:
+            if last_date is None:
+                last_date = date
+            apply_splits(date)
+            price_used = row["Price"]
+            if pd.isna(price_used):
+                price_used, _ = _price_on_or_before(prices[symbol].dropna(), date)
+                if price_used is not None:
+                    factor_end = _cumulative_split_ratio(events, date, end)
+                    price_used = float(price_used) * factor_end
+            if price_used is None or pd.isna(price_used):
                 continue
+            use_qty = False
             if pd.notna(qty) and qty != 0:
+                est_amount = abs(qty) * price_used
+                if pd.notna(row["Amount"]) and est_amount > 0:
+                    if abs(est_amount - abs(row["Amount"])) / est_amount <= 0.05:
+                        use_qty = True
+                else:
+                    use_qty = True
+            if use_qty:
                 shares = int(abs(qty))
             else:
                 shares, _, _ = infer_shares_from_amount(row["Amount"], price_used)
             if shares <= 0:
                 continue
             if action == "buy":
-                lots.append({"shares": shares, "price": price_used})
-                total_cost += shares * price_used
+                lots.append({
+                    "shares": shares,
+                    "price": price_used,
+                    "date": date,
+                    "cost": shares * price_used,
+                    "cost_per_share": price_used,
+                    "realized_pnl": 0.0,
+                })
             else:
                 remaining = shares
+                proceeds_per_share = price_used
+                if pd.notna(row["Amount"]) and shares > 0:
+                    proceeds_per_share = abs(row["Amount"]) / shares
                 while remaining > 0 and lots:
                     lot = lots[0]
                     take = min(remaining, lot["shares"])
-                    realized_pnl += take * (price_used - lot["price"])
+                    lot["realized_pnl"] += take * (proceeds_per_share - lot["cost_per_share"])
+                    lot["shares"] -= take
+                    remaining -= take
+                    if lot["shares"] == 0:
+                        lot_cost = lot["cost"]
+                        if lot_cost > 0:
+                            # Per-lot multiple so sequential cycles compound.
+                            lot_multiples.append(1.0 + (lot["realized_pnl"] / lot_cost))
+                        lots.pop(0)
+        # Unrealized on remaining lots to end date.
+        if last_date is not None:
+            apply_splits(end)
+        end_price, _ = _price_on_or_before(prices[symbol].dropna(), end)
+        if end_price is not None:
+            for lot in lots:
+                lot["realized_pnl"] += lot["shares"] * (end_price - lot["cost_per_share"])
+                lot_cost = lot["cost"]
+                if lot_cost > 0:
+                    lot_multiples.append(1.0 + (lot["realized_pnl"] / lot_cost))
+        if lot_multiples:
+            returns[symbol] = float(np.prod(lot_multiples) - 1.0)
+
+    return pd.Series(returns)
+
+
+def compute_trade_pnl(
+    transactions: pd.DataFrame,
+    prices: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    splits: pd.DataFrame | None = None,
+) -> pd.Series:
+    if transactions.empty or prices.empty:
+        return pd.Series(dtype=float)
+
+    tx = transactions.copy()
+    tx["Date"] = pd.to_datetime(tx["Date"], errors="coerce")
+    tx = tx.dropna(subset=["Date"])
+    tx = tx[(tx["Date"] >= start) & (tx["Date"] <= end)]
+    tx["Quantity"] = tx.get("Quantity", pd.Series(dtype=float)).apply(_to_number)
+    tx["Price"] = tx.get("Price", pd.Series(dtype=float)).apply(_to_number)
+    tx["Amount"] = tx.get("Amount", pd.Series(dtype=float)).apply(_to_number)
+    tx["Action"] = tx["Action"].astype(str)
+    tx = tx[tx["Symbol"].notna()]
+    tx = tx[tx["Action"].str.lower().isin(["buy", "sell"])]
+    if tx.empty:
+        return pd.Series(dtype=float)
+
+    pnl = {}
+    split_events = _split_map(splits)
+    for symbol in tx["Symbol"].unique():
+        if symbol not in prices.columns:
+            continue
+        sym_tx = tx[tx["Symbol"] == symbol].sort_values("Date")
+        lots = []
+        last_date: pd.Timestamp | None = None
+        events = split_events.get(symbol, [])
+
+        def apply_splits(to_date: pd.Timestamp) -> None:
+            nonlocal last_date, lots
+            if not events:
+                last_date = to_date
+                return
+            if last_date is None:
+                last_date = to_date
+                return
+            for dt, ratio in events:
+                if last_date < dt <= to_date:
+                    for lot in lots:
+                        lot["shares"] *= ratio
+                        lot["cost_per_share"] /= ratio
+            last_date = to_date
+
+        for _, row in sym_tx.iterrows():
+            action = row["Action"].strip().lower()
+            date = row["Date"]
+            qty = row["Quantity"]
+            if last_date is None:
+                last_date = date
+            apply_splits(date)
+            price_used = row["Price"]
+            if pd.isna(price_used):
+                price_used, _ = _price_on_or_before(prices[symbol].dropna(), date)
+                if price_used is not None:
+                    factor_end = _cumulative_split_ratio(events, date, end)
+                    price_used = float(price_used) * factor_end
+            if price_used is None or pd.isna(price_used):
+                continue
+            use_qty = False
+            if pd.notna(qty) and qty != 0:
+                est_amount = abs(qty) * price_used
+                if pd.notna(row["Amount"]) and est_amount > 0:
+                    if abs(est_amount - abs(row["Amount"])) / est_amount <= 0.05:
+                        use_qty = True
+                else:
+                    use_qty = True
+            if use_qty:
+                shares = int(abs(qty))
+            else:
+                shares, _, _ = infer_shares_from_amount(row["Amount"], price_used)
+            if shares <= 0:
+                continue
+            if action == "buy":
+                lots.append({
+                    "shares": shares,
+                    "cost_per_share": price_used,
+                })
+            else:
+                remaining = shares
+                proceeds_per_share = price_used
+                if pd.notna(row["Amount"]) and shares > 0:
+                    proceeds_per_share = abs(row["Amount"]) / shares
+                while remaining > 0 and lots:
+                    lot = lots[0]
+                    take = min(remaining, lot["shares"])
+                    pnl.setdefault(symbol, 0.0)
+                    pnl[symbol] += take * (proceeds_per_share - lot["cost_per_share"])
                     lot["shares"] -= take
                     remaining -= take
                     if lot["shares"] == 0:
                         lots.pop(0)
-        # Unrealized on remaining lots to end date.
+
+        if last_date is not None:
+            apply_splits(end)
         end_price, _ = _price_on_or_before(prices[symbol].dropna(), end)
         if end_price is not None:
             for lot in lots:
-                realized_pnl += lot["shares"] * (end_price - lot["price"])
-                total_cost += lot["shares"] * lot["price"]
-        if total_cost > 0:
-            returns[symbol] = realized_pnl / total_cost
+                pnl.setdefault(symbol, 0.0)
+                pnl[symbol] += lot["shares"] * (end_price - lot["cost_per_share"])
 
-    return pd.Series(returns)
+    return pd.Series(pnl)
+
+
+def compute_trade_summary(
+    transactions: pd.DataFrame,
+    prices: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    splits: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    if transactions.empty or prices.empty:
+        return pd.DataFrame()
+
+    tx = transactions.copy()
+    tx["Date"] = pd.to_datetime(tx["Date"], errors="coerce")
+    tx = tx.dropna(subset=["Date"])
+    tx = tx[(tx["Date"] >= start) & (tx["Date"] <= end)]
+    tx["Quantity"] = tx.get("Quantity", pd.Series(dtype=float)).apply(_to_number)
+    tx["Price"] = tx.get("Price", pd.Series(dtype=float)).apply(_to_number)
+    tx["Amount"] = tx.get("Amount", pd.Series(dtype=float)).apply(_to_number)
+    tx["Action"] = tx["Action"].astype(str)
+    tx = tx[tx["Symbol"].notna()]
+    tx = tx[tx["Action"].str.lower().isin(["buy", "sell"])]
+    if tx.empty:
+        return pd.DataFrame()
+
+    split_events = _split_map(splits)
+    records = []
+    for symbol in tx["Symbol"].unique():
+        if symbol not in prices.columns:
+            continue
+        sym_tx = tx[tx["Symbol"] == symbol].sort_values("Date")
+        lots = []
+        invested = 0.0
+        realized = 0.0
+        last_date: pd.Timestamp | None = None
+        events = split_events.get(symbol, [])
+
+        def apply_splits(to_date: pd.Timestamp) -> None:
+            nonlocal last_date, lots
+            if not events:
+                last_date = to_date
+                return
+            if last_date is None:
+                last_date = to_date
+                return
+            for dt, ratio in events:
+                if last_date < dt <= to_date:
+                    for lot in lots:
+                        lot["shares"] *= ratio
+                        lot["cost_per_share"] /= ratio
+            last_date = to_date
+
+        for _, row in sym_tx.iterrows():
+            action = row["Action"].strip().lower()
+            date = row["Date"]
+            qty = row["Quantity"]
+            if last_date is None:
+                last_date = date
+            apply_splits(date)
+            price_used = row["Price"]
+            if pd.isna(price_used):
+                price_used, _ = _price_on_or_before(prices[symbol].dropna(), date)
+                if price_used is not None:
+                    factor_end = _cumulative_split_ratio(events, date, end)
+                    price_used = float(price_used) * factor_end
+            if price_used is None or pd.isna(price_used):
+                continue
+            use_qty = False
+            if pd.notna(qty) and qty != 0:
+                est_amount = abs(qty) * price_used
+                if pd.notna(row["Amount"]) and est_amount > 0:
+                    if abs(est_amount - abs(row["Amount"])) / est_amount <= 0.05:
+                        use_qty = True
+                else:
+                    use_qty = True
+            if use_qty:
+                shares = int(abs(qty))
+            else:
+                shares, _, _ = infer_shares_from_amount(row["Amount"], price_used)
+            if shares <= 0:
+                continue
+
+            if action == "buy":
+                cash_out = abs(row["Amount"]) if pd.notna(row["Amount"]) else shares * price_used
+                invested += cash_out
+                lots.append({"shares": shares, "cost_per_share": cash_out / shares})
+            else:
+                cash_in = abs(row["Amount"]) if pd.notna(row["Amount"]) else shares * price_used
+                realized += cash_in
+                remaining = shares
+                while remaining > 0 and lots:
+                    lot = lots[0]
+                    take = min(remaining, lot["shares"])
+                    lot["shares"] -= take
+                    remaining -= take
+                    if lot["shares"] == 0:
+                        lots.pop(0)
+
+        if last_date is not None:
+            apply_splits(end)
+        end_price, _ = _price_on_or_before(prices[symbol].dropna(), end)
+        unrealized = 0.0
+        if end_price is not None:
+            for lot in lots:
+                unrealized += lot["shares"] * end_price
+
+        if invested > 0:
+            pnl = (realized + unrealized) - invested
+            total_return = pnl / invested
+            records.append({
+                "symbol": symbol,
+                "invested": invested,
+                "realized": realized,
+                "unrealized": unrealized,
+                "pnl": pnl,
+                "total_return": total_return,
+            })
+
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records).set_index("symbol")

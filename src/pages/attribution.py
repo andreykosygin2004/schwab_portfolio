@@ -19,7 +19,7 @@ from analytics.portfolio import load_portfolio_series, risk_free_warning
 from utils.transactions import (
     build_positions_from_transactions,
     build_starting_positions_from_mv,
-    compute_cycle_returns,
+    compute_trade_summary,
 )
 from viz.plots import empty_figure
 
@@ -74,6 +74,8 @@ layout = html.Div([
     html.H3("Holdings Attribution (Time-series)"),
     html.Br(),
     html.P("Method: time-series weights attribution using lagged MV weights × returns."),
+    html.P("Total Return uses trade cashflows: (realized + unrealized - invested) / invested."),
+    html.P("Contribution uses trade P&L (realized + unrealized - invested) from transactions."),
     html.Div(id="attr-holdings-warning", style={"color": "#b45309", "marginBottom": "6px"}),
     dcc.Loading(dcc.Graph(id="attr-holdings-bar")),
     dash_table.DataTable(
@@ -81,8 +83,8 @@ layout = html.Div([
         columns=[
             {"name": "Holding", "id": "holding"},
             {"name": "Avg Weight", "id": "avg_weight"},
-            {"name": "Total Return", "id": "ret"},
-            {"name": "Contribution", "id": "contrib"},
+            {"name": "Total Return (trade-based)", "id": "ret"},
+            {"name": "Contribution (trade P&L)", "id": "contrib"},
             {"name": "% of total", "id": "pct_total"},
         ],
         style_table={"overflowX": "auto"},
@@ -150,6 +152,7 @@ def update_attribution(start_date, end_date, freq, top_n):
     holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
     price_hist = pd.read_csv("data/historical_prices.csv", parse_dates=["Date"]).set_index("Date").sort_index()
     transactions = pd.read_csv("data/schwab_transactions.csv")
+    splits = pd.read_csv("data/stock_splits.csv")
 
     df = holdings_ts.loc[start:end]
     if df.empty:
@@ -167,13 +170,18 @@ def update_attribution(start_date, end_date, freq, top_n):
     if "total_value_clean_rf" in df.columns:
         total_value = df["total_value_clean_rf"].copy()
 
+    tx_dates = pd.to_datetime(transactions["Date"], errors="coerce")
+    tx_buy_sell = transactions[transactions["Action"].str.lower().isin(["buy", "sell"])]
+    tx_start = pd.to_datetime(tx_buy_sell["Date"], errors="coerce").min() if not tx_buy_sell.empty else start
+    start_full = min(start, tx_start) if pd.notna(tx_start) else start
+
     debug_rows = []
     mv_df = pd.DataFrame()
     price_slice = pd.DataFrame()
     if mv_cols:
         mv_df = df[mv_cols]
         tickers = [c.replace("MV_", "") for c in mv_cols]
-        price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
+        price_slice = price_hist.loc[start_full:end, price_hist.columns.intersection(tickers)]
         if price_slice.empty:
             empty = empty_figure("No price data.")
             return warning, empty, [], [], empty, empty, []
@@ -183,8 +191,15 @@ def update_attribution(start_date, end_date, freq, top_n):
             total_value = total_value.resample("W-FRI").last()
 
     attr_df = time_series_attribution(mv_df, price_slice, total_value) if not mv_df.empty else pd.DataFrame()
-    starting_positions = build_starting_positions_from_mv(mv_df, price_slice, start)
-    positions, debug_df = build_positions_from_transactions(transactions, price_slice, start, end, starting_positions)
+    starting_positions = build_starting_positions_from_mv(mv_df, price_slice, start_full)
+    positions, debug_df = build_positions_from_transactions(
+        transactions,
+        price_slice,
+        start_full,
+        end,
+        starting_positions,
+        splits=splits,
+    )
     debug_rows = debug_df.to_dict("records") if not debug_df.empty else []
     if not debug_df.empty:
         low_conf = (debug_df["confidence"] == "low").mean()
@@ -196,12 +211,16 @@ def update_attribution(start_date, end_date, freq, top_n):
             positions = positions.resample("W-FRI").last()
             prices_aligned = prices_aligned.resample("W-FRI").last()
         returns = prices_aligned.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        returns = returns.loc[start:end]
+        positions = positions.loc[returns.index]
+        prices_aligned = prices_aligned.loc[returns.index]
         mv = positions * prices_aligned
         total = mv.sum(axis=1).replace(0, np.nan)
         weights = mv.div(total, axis=0).fillna(0.0)
         weights_lag = weights.shift(1).fillna(0.0)
-        contrib = weights_lag * returns
-        total_contrib = contrib.sum(axis=0)
+        trade_summary = compute_trade_summary(transactions, price_slice, start_full, end, splits=splits)
+        total_contrib = trade_summary["pnl"].reindex(positions.columns).fillna(0.0) if not trade_summary.empty else 0.0
+        total_pnl = total_contrib.sum()
         avg_weight = weights_lag.mean(axis=0)
         total_return = (1 + returns).prod() - 1
         attr_df = pd.DataFrame({
@@ -209,12 +228,11 @@ def update_attribution(start_date, end_date, freq, top_n):
             "total_return": total_return,
             "contribution": total_contrib,
         })
-        attr_df["pct_total"] = attr_df["contribution"] / attr_df["contribution"].sum() if attr_df["contribution"].sum() != 0 else 0.0
-        warning = "Using transaction-inferred positions (buy/sell cycles tracked)."
+        attr_df["pct_total"] = attr_df["contribution"] / total_pnl if total_pnl != 0 else 0.0
+        warning = "Using transaction-inferred positions (buy/sell cycles tracked; MoneyLink excluded)."
 
-        cycle_returns = compute_cycle_returns(transactions, price_slice, start, end)
-        if not cycle_returns.empty:
-            attr_df["total_return"] = attr_df.index.to_series().map(cycle_returns).combine_first(attr_df["total_return"])
+        if not trade_summary.empty:
+            attr_df["total_return"] = attr_df.index.to_series().map(trade_summary["total_return"]).combine_first(attr_df["total_return"])
     if attr_df.empty:
         latest = df[mv_cols].iloc[-1].fillna(0.0) if mv_cols else pd.Series(dtype=float)
         total = latest.sum()
@@ -247,7 +265,7 @@ def update_attribution(start_date, end_date, freq, top_n):
         title="Top Contributors / Detractors",
     )
     bar_fig.update_layout(height=420)
-    bar_fig.update_xaxes(title_text="Contribution", tickformat=".1%")
+    bar_fig.update_xaxes(title_text="Contribution ($, trade P&L)")
 
     table_rows = []
     for holding, row in attr_top.iterrows():
@@ -255,7 +273,7 @@ def update_attribution(start_date, end_date, freq, top_n):
             "holding": holding,
             "avg_weight": f"{row['avg_weight']:.1%}",
             "ret": f"{row['total_return']:.1%}",
-            "contrib": f"{row['contribution']:.1%}",
+            "contrib": f"${row['contribution']:.2f}",
             "pct_total": f"{row['pct_total']:.1%}",
         })
 
