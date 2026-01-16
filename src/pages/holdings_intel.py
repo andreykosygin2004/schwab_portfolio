@@ -15,7 +15,7 @@ from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from analytics.portfolio import load_holdings_timeseries, load_portfolio_series
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/holdings-intel", name="Holdings Intelligence")
+dash.register_page(__name__, path="/holdings-intel", name="Holdings Risk")
 
 PORTFOLIO_SERIES = load_portfolio_series()
 MIN_DATE = PORTFOLIO_SERIES.index.min()

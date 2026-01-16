@@ -20,7 +20,7 @@ from analytics_macro import load_portfolio_series, load_ticker_prices
 from analytics.portfolio import risk_free_warning
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/risk", name="Risk & Drawdowns")
+dash.register_page(__name__, path="/risk", name="Portfolio Risk")
 
 PORTFOLIO_SERIES = load_portfolio_series()
 MIN_DATE = PORTFOLIO_SERIES.index.min()

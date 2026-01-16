@@ -1,6 +1,5 @@
 import dash
 from dash import html, dcc, Input, Output, callback, dash_table, ctx
-import dash_bootstrap_components as dbc
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -8,15 +7,7 @@ import plotly.graph_objects as go
 
 from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.portfolio import load_portfolio_series, risk_free_warning
-from analytics.regimes import (
-    analysis_window,
-    compute_regime_features,
-    label_regimes,
-    load_proxy_prices,
-    returns_from_prices,
-    simulate_overlay,
-    transition_matrix,
-)
+from analytics.regimes import compute_regime_features, label_regimes, load_proxy_prices, returns_from_prices
 from analytics.overlay import (
     apply_overlay,
     compute_overlay_weights,
@@ -28,7 +19,7 @@ from analytics.common import annualize_return_cagr, annualize_vol
 from analytics_macro import load_ticker_prices
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/regimes", name="Regimes")
+dash.register_page(__name__, path="/regimes", name="Regime Analysis")
 
 PORTFOLIO_SERIES = load_portfolio_series()
 
@@ -152,13 +143,6 @@ layout = html.Div([
     html.Br(),
     html.Hr(),
     html.Br(),
-    html.H3("Transition Matrix"),
-    html.Br(),
-    dcc.Loading(dcc.Graph(id="regime-transition")),
-
-    html.Br(),
-    html.Hr(),
-    html.Br(),
     html.H3("Overlay Simulator"),
     html.Br(),
     html.P("Overlay is simulated only. Charts below compare baseline vs overlay and benchmark-relative metrics."),
@@ -213,7 +197,6 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="overlay-weights")),
     dcc.Loading(dcc.Graph(id="overlay-beta")),
     dcc.Loading(dcc.Graph(id="overlay-vol")),
-    dcc.Loading(dcc.Graph(id="overlay-te")),
     dash_table.DataTable(
         id="overlay-summary-table",
         columns=[
@@ -233,13 +216,11 @@ layout = html.Div([
     Output("regime-timeline", "figure"),
     Output("regime-summary-table", "data"),
     Output("regime-warning", "children"),
-    Output("regime-transition", "figure"),
     Output("overlay-cumret", "figure"),
     Output("overlay-drawdown", "figure"),
     Output("overlay-weights", "figure"),
     Output("overlay-beta", "figure"),
     Output("overlay-vol", "figure"),
-    Output("overlay-te", "figure"),
     Output("overlay-summary-table", "data"),
     Output("overlay-exposure-summary", "children"),
     Output("overlay-mapping-table", "data"),
@@ -261,24 +242,24 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
     portfolio = PORTFOLIO_SERIES.loc[start:end].dropna()
     if portfolio.empty:
         empty = empty_figure("No data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", [], [], []
 
     prices = load_proxy_prices(start, end)
     if prices.empty:
         empty = empty_figure("No proxy data available.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", [], [], []
 
     features = compute_regime_features(prices, freq)
     labels = label_regimes(features, preset)
     labels = labels.reindex(features.index).dropna()
     if labels.empty:
         empty = empty_figure("No regime labels available.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", [], [], []
 
     equity = portfolio.reindex(labels.index).ffill().dropna()
     if equity.empty:
         empty = empty_figure("No aligned portfolio data.")
-        return empty, [], "", empty, empty, empty, empty, empty, empty, [], "", [], [], []
+        return empty, [], "", empty, empty, empty, empty, empty, [], "", [], [], []
 
     periods = 252 if freq == "Daily" else 52
     port_ret = returns_from_prices(equity, freq=freq)
@@ -324,12 +305,6 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
     if len(summary_rows) < 3:
         counts = labels.value_counts().to_dict()
         regime_warning = f"Only {len(summary_rows)} regimes in this window. Counts: {counts}"
-
-    trans = transition_matrix(labels)
-    transition_fig = empty_figure("No transition data.")
-    if not trans.empty:
-        transition_fig = px.imshow(trans, text_auto=".2f", title="Regime Transition Matrix")
-        transition_fig.update_layout(height=400)
 
     overlay_defaults = {
         "Conservative": {
@@ -401,29 +376,6 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
     overlay_dd_fig.add_trace(go.Scatter(x=overlay_dd.index, y=overlay_dd.values, name="Overlay"))
     overlay_dd_fig.update_layout(title="Drawdown: Baseline vs Overlay", height=420, legend_title_text="")
     overlay_dd_fig.update_yaxes(tickformat=".1%")
-
-    bench_prices = load_ticker_prices([benchmark], start=start, end=end)
-    te_fig = empty_figure("No benchmark data.")
-    if not bench_prices.empty and benchmark in bench_prices.columns:
-        bench_ret = returns_from_prices(bench_prices[benchmark], freq=freq)
-        bench_ret = bench_ret.reindex(port_ret.index).dropna()
-        overlay_ret = overlay_ret.reindex(bench_ret.index).dropna()
-        if len(bench_ret) < (20 if freq == "Daily" else 12):
-            te_fig = empty_figure("Insufficient data for rolling window.")
-        else:
-            window = 63 if freq == "Daily" else 26
-            active = overlay_ret - bench_ret
-            te = active.rolling(window).std() * np.sqrt(periods)
-            ir = active.rolling(window).mean() * periods / active.rolling(window).std()
-            te_fig = go.Figure()
-            te_fig.add_trace(go.Scatter(x=te.index, y=te.values, name="Tracking Error"))
-            te_fig.add_trace(go.Scatter(x=ir.index, y=ir.values, name="Information Ratio", yaxis="y2"))
-            te_fig.update_layout(
-                title="Overlay Tracking Error & Information Ratio",
-                height=420,
-                yaxis=dict(title="Tracking Error", tickformat=".1%"),
-                yaxis2=dict(title="Info Ratio", overlaying="y", side="right"),
-            )
 
     base_stats = _perf_summary(port_ret, periods)
     overlay_stats = _perf_summary(overlay_ret, periods)
@@ -499,13 +451,11 @@ def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset
         timeline_fig,
         summary_rows,
         regime_warning,
-        transition_fig,
         overlay_cum_fig,
         overlay_dd_fig,
         weights_fig,
         beta_fig,
         vol_fig,
-        te_fig,
         overlay_rows,
         exposure_summary,
         mapping_rows,

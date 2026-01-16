@@ -1,16 +1,14 @@
 import dash
 from dash import html, dcc, Input, Output, callback
-import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from viz.plots import empty_figure
 from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 
-dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
+dash.register_page(__name__, path="/benchmarks", name="Benchmark Comparison")
 
 # -----------------------
 # Load data
@@ -157,19 +155,6 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="rolling-excess-graph")),
     html.Br(),
 
-    # 2b) Tracking Error + Information Ratio
-    html.Div([
-        "Tracking Error & Information Ratio (Portfolio vs Benchmark)",
-        html.I(" ⓘ", id="tracking-info", style={"cursor": "pointer", "color": "#6c757d"}),
-        dbc.Tooltip(
-            "Tracking error is the annualized standard deviation of excess returns. "
-            "The information ratio is the annualized excess return divided by tracking error.",
-            target="tracking-info",
-        ),
-    ]),
-    dcc.Loading(dcc.Graph(id="tracking-error-graph")),
-    html.Br(),
-
     # 3) Alpha & Beta (CAPM-style)
     dcc.Loading(dcc.Graph(id="alpha-beta-graph")),
 ])
@@ -225,7 +210,6 @@ def _daily_returns_df(price_df: pd.DataFrame) -> pd.DataFrame:
 @callback(
     Output("cumret-graph", "figure"),
     Output("rolling-excess-graph", "figure"),
-    Output("tracking-error-graph", "figure"),
     Output("alpha-beta-graph", "figure"),
     Input("bench-select", "value"),
     Input("bench-date-range", "start_date"),
@@ -237,7 +221,7 @@ def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
 
     if pv.empty:
         empty = empty_figure("No data available for selected range.")
-        return empty, empty, empty, empty
+        return empty, empty, empty
 
     # --- 1) Cumulative Return Comparison ---
     cum_df = pd.DataFrame(index=pv.index)
@@ -260,8 +244,7 @@ def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
         # If no benchmarks selected, we can’t compute excess return or CAPM
         fig_roll = empty_figure("Select at least one benchmark to compute rolling excess returns.")
         fig_ab = empty_figure("Select at least one benchmark to compute alpha/beta.")
-        fig_te = empty_figure("Select at least one benchmark to compute tracking error.")
-        return fig_cum, fig_roll, fig_te, fig_ab
+        return fig_cum, fig_roll, fig_ab
 
     pv_ret = _daily_returns(pv)
     bm_ret = _daily_returns_df(bm)
@@ -300,7 +283,6 @@ def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
 
     if roll_df.dropna(how="all").empty:
         fig_roll = empty_figure("Not enough data to compute rolling excess returns.")
-        fig_te = empty_figure("Not enough data to compute tracking error.")
         fig_ab = empty_figure("Not enough data to compute CAPM regression.")
     else:
         fig_roll = px.line(
@@ -310,38 +292,6 @@ def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
         )
         fig_roll.update_layout(height=450)
         fig_roll.update_yaxes(tickformat=".1%")
-
-        fig_te = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_te.update_layout(
-            title=f"Tracking Error & Information Ratio (window={window} days)",
-            height=450,
-            legend_title_text="",
-        )
-
-        for bench_name in selected_benchmarks:
-            if bench_name not in bm_ret.columns:
-                continue
-            excess = (pv_ret - bm_ret[bench_name]).dropna()
-            if excess.empty:
-                continue
-            te = excess.rolling(window).std() * np.sqrt(252)
-            ir = (excess.rolling(window).mean() * 252) / te
-            fig_te.add_trace(
-                go.Scatter(x=te.index, y=te.values, mode="lines", name=f"TE vs {bench_name}"),
-                secondary_y=False,
-            )
-            fig_te.add_trace(
-                go.Scatter(
-                    x=ir.index,
-                    y=ir.values,
-                    mode="lines",
-                    name=f"IR vs {bench_name}",
-                    line={"dash": "dot"},
-                ),
-                secondary_y=True,
-            )
-        fig_te.update_yaxes(title_text="Tracking Error", tickformat=".1%", secondary_y=False)
-        fig_te.update_yaxes(title_text="Information Ratio", secondary_y=True)
 
         # --- 3) Alpha & Beta (CAPM-style) ---
         # CAPM regression: (Rp - Rf) = alpha + beta * (Rb - Rf)
@@ -353,7 +303,7 @@ def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
         if y_all.empty:
             fig_ab = empty_figure("No return data available for CAPM.")
             fig_ab.update_layout(height=450)
-            return fig_cum, fig_roll, fig_te, fig_ab
+            return fig_cum, fig_roll, fig_ab
 
         fig_ab = go.Figure()
 
@@ -412,4 +362,4 @@ def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
         fig_ab.update_xaxes(tickformat=".2%")
         fig_ab.update_yaxes(tickformat=".2%")
 
-    return fig_cum, fig_roll, fig_te, fig_ab
+    return fig_cum, fig_roll, fig_ab

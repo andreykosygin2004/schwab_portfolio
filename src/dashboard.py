@@ -21,13 +21,20 @@ NAV_ORDER = [
 
 page_by_path = {page["path"]: page for page in dash.page_registry.values()}
 nav_links = []
+NAV_LINK_STYLE = {
+    "width": "180px",
+    "textAlign": "center",
+    "whiteSpace": "nowrap",
+    "overflow": "hidden",
+    "textOverflow": "ellipsis",
+}
 for path in NAV_ORDER:
     page = page_by_path.get(path)
     if not page:
         continue
     nav_links.append(
         dbc.NavItem(
-            dbc.NavLink(page["name"], href=page["path"], active="exact")
+            dbc.NavLink(page["name"], href=page["path"], active="exact", style=NAV_LINK_STYLE)
         )
     )
 
