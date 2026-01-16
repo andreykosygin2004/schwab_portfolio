@@ -8,7 +8,7 @@ from analytics import compute_performance_metrics
 from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/", name="Home")
+dash.register_page(__name__, path="/", name="Account Overview")
 
 prices = pd.read_csv("data/historical_prices.csv", index_col=0, parse_dates=True)
 tickers = prices.columns.tolist()

@@ -22,7 +22,7 @@ from analytics.regime_probability import (
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/regime-forecast", name="Regime Forecaster")
+dash.register_page(__name__, path="/regime-forecast", name="Regime Forecast")
 
 HORIZONS = [2, 3, 4]
 MODELS = ["Logistic Regression", "Gradient Boosting"]

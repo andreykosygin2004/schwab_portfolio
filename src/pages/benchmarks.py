@@ -8,7 +8,7 @@ from viz.plots import empty_figure
 from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 
-dash.register_page(__name__, path="/benchmarks", name="Benchmark Comparison")
+dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
 
 # -----------------------
 # Load data

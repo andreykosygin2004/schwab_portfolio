@@ -22,11 +22,11 @@ NAV_ORDER = [
 page_by_path = {page["path"]: page for page in dash.page_registry.values()}
 nav_links = []
 NAV_LINK_STYLE = {
-    "width": "180px",
     "textAlign": "center",
     "whiteSpace": "nowrap",
-    "overflow": "hidden",
-    "textOverflow": "ellipsis",
+    "lineHeight": "1.1",
+    "padding": "4px 8px",
+    "width": "100%",
 }
 for path in NAV_ORDER:
     page = page_by_path.get(path)
@@ -43,7 +43,19 @@ app.layout = dbc.Container([
         brand="Schwab Portfolio Dashboard",
         color="primary",
         dark=True,
-        children=nav_links
+        brandClassName="app-title",
+        children=dbc.Nav(
+            nav_links,
+            navbar=True,
+            style={
+                "display": "grid",
+                "gridTemplateColumns": "repeat(5, minmax(0, 1fr))",
+                "rowGap": "2px",
+                "columnGap": "6px",
+                "marginTop": "2px",
+                "width": "100%",
+            },
+        ),
     ),
     html.Div(dash.page_container, className="page-container"),
 ], fluid=True, className="app-shell")

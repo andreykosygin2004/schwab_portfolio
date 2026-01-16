@@ -23,7 +23,7 @@ from utils.transactions import (
 )
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/attribution", name="Performance Attribution")
+dash.register_page(__name__, path="/attribution", name="Return Breakdown")
 
 PORTFOLIO_SERIES = load_portfolio_series()
 DEFAULT_START = DEFAULT_START_DATE_ANALYSIS
