@@ -102,7 +102,9 @@ def _ytd_change(series: pd.Series) -> float:
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Macro Dashboard"),
+    html.P("Monitor macro drivers and proxy signals that influence portfolio risk and returns."),
     html.Div(
         risk_free_warning(),
         style={"color": "#b45309", "marginBottom": "8px"},

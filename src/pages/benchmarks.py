@@ -94,6 +94,7 @@ benchmark_options = [{"label": c, "value": c} for c in bench.columns]
 # -----------------------
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Benchmarks & Performance"),
     html.Div(
         risk_free_warning(),

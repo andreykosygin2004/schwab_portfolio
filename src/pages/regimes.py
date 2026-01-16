@@ -66,6 +66,7 @@ def _perf_summary(returns: pd.Series, periods: int) -> dict:
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Regimes"),
     html.Div(
         risk_free_warning(),
@@ -115,7 +116,6 @@ layout = html.Div([
         ], style={"maxWidth": "220px"}),
     ], style={"display": "flex", "gap": "18px", "flexWrap": "wrap"}),
 
-    html.Br(),
     html.Br(),
     html.Br(),
     dcc.Loading(dcc.Graph(id="regime-timeline")),

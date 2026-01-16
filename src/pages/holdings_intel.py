@@ -28,6 +28,7 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Holdings Intelligence"),
     html.P("Analyze concentration, risk contribution, and scenario shocks."),
     html.Br(),
@@ -58,8 +59,8 @@ layout = html.Div([
     html.Br(),
     html.Br(),
     html.H3("Concentration"),
+    html.P("Examine the weight of top 1 and top 3 holdings and HHI."),
     html.Br(),
-    html.P("HHI and top concentration based on end-of-period weights."),
     html.Div(id="concentration-metrics"),
 
     html.Br(),
@@ -178,7 +179,7 @@ def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value
 
     conc = concentration_metrics(weights)
     conc_text = html.Div([
-        html.P(f"HHI: {conc['hhi']:.3f}"),
+        html.P(f"Herfindahl-Hirschman Index (HHI): {conc['hhi']:.3f}"),
         html.P(f"Top 1 weight: {conc['top1']:.1%}"),
         html.P(f"Top 3 weight: {conc['top3']:.1%}"),
     ])

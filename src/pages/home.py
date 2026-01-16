@@ -1,6 +1,5 @@
 import dash
 from dash import html, dcc, Input, Output, callback, dash_table, no_update
-import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -8,7 +7,7 @@ from analytics import compute_performance_metrics
 from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
 from viz.plots import empty_figure
 
-dash.register_page(__name__, path="/", name="Account Overview")
+dash.register_page(__name__, path="/", name="Portfolio Overview")
 
 prices = pd.read_csv("data/historical_prices.csv", index_col=0, parse_dates=True)
 tickers = prices.columns.tolist()
@@ -18,14 +17,13 @@ portfolio_ts = build_portfolio_timeseries()
 mv_options = [{"label": "Portfolio Total", "value": "Portfolio Total"}] + [
     {"label": t, "value": t} for t in tickers]
 
-INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 GRAPH_HEIGHT = 450
-ROLL_VOL_WINDOW = 63
 
 min_date = holdings_ts.index.min().date().isoformat()
 max_date = holdings_ts.index.max().date().isoformat()
 
 layout = html.Div([
+    html.Br(),
     html.Br(),
     html.H2("Portfolio Overview"),
     html.Div(
@@ -56,6 +54,7 @@ layout = html.Div([
         start_date=min_date,
         end_date=max_date
     ),
+    html.Br(),
     dcc.Loading(dcc.Graph(id="mv-graph")),
 
     html.Br(),
@@ -103,22 +102,6 @@ layout = html.Div([
     style_table={"width": "60%", "margin": "auto"}
     ),
     
-    html.Br(),
-    html.Hr(),
-    html.Br(),
-    html.H3([
-        f"Rolling Portfolio Volatility (Baseline, {ROLL_VOL_WINDOW}D)",
-        html.Span(" (info)", id="rolling-vol-info", style=INFO_STYLE),
-    ]),
-    html.Br(),
-    dbc.Tooltip(
-        "Annualized rolling volatility based on daily portfolio returns.",
-        target="rolling-vol-info",
-        placement="right",
-    ),
-    dcc.Loading(dcc.Graph(id="pv-rolling-vol-graph")
-                ),
-    html.Br(),
 ])
 
 def fmt_metric_value(v):
@@ -284,24 +267,3 @@ def update_pv_clean_graph_and_metrics(start_date, end_date):
     rows = metrics_dict_to_rows(metrics_clean)
 
     return fig, rows
-
-@callback(
-    Output("pv-rolling-vol-graph", "figure"),
-    Input("pv-clean-date-range", "start_date"),
-    Input("pv-clean-date-range", "end_date"),
-)
-def update_rolling_vol_graph(start_date, end_date):
-    df = holdings_ts.loc[start_date:end_date].copy()
-    if df.empty:
-        return empty_figure("No data in selected range", height=GRAPH_HEIGHT)
-    series_name = "total_value_clean_rf" if "total_value_clean_rf" in portfolio_ts.columns else "total_value_clean"
-    s = portfolio_ts.loc[start_date:end_date, series_name].dropna()
-    if s.empty or len(s) < ROLL_VOL_WINDOW + 1:
-        return empty_figure("Not enough data for rolling volatility", height=GRAPH_HEIGHT)
-    ret = s.pct_change().dropna()
-    vol = ret.rolling(ROLL_VOL_WINDOW).std() * np.sqrt(252)
-    fig = px.line(vol, title=f"Rolling Volatility (Baseline, {ROLL_VOL_WINDOW}D)")
-    fig.update_layout(height=GRAPH_HEIGHT, legend_title_text="")
-    fig.update_yaxes(title_text="Annualized Volatility", tickformat=".1%")
-    fig.update_xaxes(title_text="Date")
-    return fig

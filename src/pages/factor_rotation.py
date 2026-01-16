@@ -31,6 +31,7 @@ EXECUTION_DEFAULT = pd.Timestamp.now(tz="America/New_York").normalize().replace(
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Factor Rotation Sleeve"),
     html.P("Monthly rebalanced sleeve with blended momentum/trend signals, turnover control, and transaction costs."),
     html.Br(),

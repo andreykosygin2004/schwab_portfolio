@@ -44,8 +44,11 @@ TARGET_LABELS = {
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Regime Forecast"),
     html.P("Weekly probability of entering the selected regime within the chosen horizon."),
+    html.Br(),
+    html.Br(),
 
     dbc.Card(
         dbc.CardBody([

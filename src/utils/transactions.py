@@ -177,6 +177,17 @@ def build_positions_from_transactions(
     events_df = pd.DataFrame(share_events)
     events_df["Date"] = pd.to_datetime(events_df["Date"])
     events_df = events_df.groupby(["Date", "Symbol"])["Shares"].sum().reset_index()
+    # Adjust historical share events for splits so only pre-split holdings are scaled.
+    split_events = _split_map(splits)
+    if split_events:
+        for symbol, events in split_events.items():
+            if symbol not in events_df["Symbol"].values:
+                continue
+            for split_date, ratio in events:
+                if ratio == 1 or pd.isna(ratio):
+                    continue
+                mask = (events_df["Symbol"] == symbol) & (events_df["Date"] < split_date)
+                events_df.loc[mask, "Shares"] = events_df.loc[mask, "Shares"] * ratio
 
     idx = prices.loc[start:end].index
     positions = pd.DataFrame(0.0, index=idx, columns=prices.columns)
@@ -196,19 +207,6 @@ def build_positions_from_transactions(
         positions.loc[date, ev["Symbol"]] += ev["Shares"]
 
     positions = positions.cumsum()
-    split_events = _split_map(splits)
-    if split_events:
-        for symbol, events in split_events.items():
-            if symbol not in positions.columns:
-                continue
-            for split_date, ratio in events:
-                if ratio == 1 or pd.isna(ratio):
-                    continue
-                idx_dates = positions.index[positions.index <= split_date]
-                if idx_dates.empty:
-                    continue
-                adj_date = idx_dates[-1]
-                positions.loc[adj_date:, symbol] = positions.loc[adj_date:, symbol] * ratio
     positions = positions.clip(lower=0.0)
     return positions, pd.DataFrame(debug_rows)
 

@@ -19,7 +19,6 @@ from analytics.portfolio import load_portfolio_series, risk_free_warning
 from utils.transactions import (
     build_positions_from_transactions,
     build_starting_positions_from_mv,
-    compute_trade_summary,
 )
 from viz.plots import empty_figure
 
@@ -33,6 +32,7 @@ FACTOR_OPTIONS = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
 
 
 layout = html.Div([
+    html.Br(),
     html.Br(),
     html.H2("Attribution"),
     html.Div(
@@ -74,8 +74,8 @@ layout = html.Div([
     html.H3("Holdings Attribution (Time-series)"),
     html.Br(),
     html.P("Method: time-series weights attribution using lagged MV weights × returns."),
-    html.P("Total Return uses trade cashflows: (realized + unrealized - invested) / invested."),
-    html.P("Contribution uses trade P&L (realized + unrealized - invested) from transactions."),
+    html.P("Total Return uses time-weighted holding returns over periods held."),
+    html.P("Contribution uses avg weight × total return (reinvested capital view)."),
     html.Div(id="attr-holdings-warning", style={"color": "#b45309", "marginBottom": "6px"}),
     dcc.Loading(dcc.Graph(id="attr-holdings-bar")),
     dash_table.DataTable(
@@ -83,8 +83,8 @@ layout = html.Div([
         columns=[
             {"name": "Holding", "id": "holding"},
             {"name": "Avg Weight", "id": "avg_weight"},
-            {"name": "Total Return (trade-based)", "id": "ret"},
-            {"name": "Contribution (trade P&L)", "id": "contrib"},
+            {"name": "Total Return (time-weighted)", "id": "ret"},
+            {"name": "Contribution (return)", "id": "contrib"},
             {"name": "% of total", "id": "pct_total"},
         ],
         style_table={"overflowX": "auto"},
@@ -218,21 +218,18 @@ def update_attribution(start_date, end_date, freq, top_n):
         total = mv.sum(axis=1).replace(0, np.nan)
         weights = mv.div(total, axis=0).fillna(0.0)
         weights_lag = weights.shift(1).fillna(0.0)
-        trade_summary = compute_trade_summary(transactions, price_slice, start_full, end, splits=splits)
-        total_contrib = trade_summary["pnl"].reindex(positions.columns).fillna(0.0) if not trade_summary.empty else 0.0
-        total_pnl = total_contrib.sum()
         avg_weight = weights_lag.mean(axis=0)
-        total_return = (1 + returns).prod() - 1
+        held = positions.shift(1).fillna(0.0) > 0
+        total_return = (1 + returns.where(held, 0.0)).prod() - 1
+        total_contrib = avg_weight * total_return
+        total_pnl = total_contrib.sum()
         attr_df = pd.DataFrame({
             "avg_weight": avg_weight,
             "total_return": total_return,
             "contribution": total_contrib,
         })
         attr_df["pct_total"] = attr_df["contribution"] / total_pnl if total_pnl != 0 else 0.0
-        warning = "Using transaction-inferred positions (buy/sell cycles tracked; MoneyLink excluded)."
-
-        if not trade_summary.empty:
-            attr_df["total_return"] = attr_df.index.to_series().map(trade_summary["total_return"]).combine_first(attr_df["total_return"])
+        warning = "Using transaction-inferred positions (reinvested capital view; MoneyLink excluded)."
     if attr_df.empty:
         latest = df[mv_cols].iloc[-1].fillna(0.0) if mv_cols else pd.Series(dtype=float)
         total = latest.sum()
@@ -265,7 +262,7 @@ def update_attribution(start_date, end_date, freq, top_n):
         title="Top Contributors / Detractors",
     )
     bar_fig.update_layout(height=420)
-    bar_fig.update_xaxes(title_text="Contribution ($, trade P&L)")
+    bar_fig.update_xaxes(title_text="Contribution (return)")
 
     table_rows = []
     for holding, row in attr_top.iterrows():
@@ -273,7 +270,7 @@ def update_attribution(start_date, end_date, freq, top_n):
             "holding": holding,
             "avg_weight": f"{row['avg_weight']:.1%}",
             "ret": f"{row['total_return']:.1%}",
-            "contrib": f"${row['contribution']:.2f}",
+            "contrib": f"{row['contribution']:.2%}",
             "pct_total": f"{row['pct_total']:.1%}",
         })
 

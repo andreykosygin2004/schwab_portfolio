@@ -29,6 +29,7 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Factor Attribution"),
     html.Div(
         risk_free_warning(),

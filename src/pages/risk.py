@@ -59,6 +59,7 @@ def _format_pct(value: float) -> str:
 
 layout = html.Div([
     html.Br(),
+    html.Br(),
     html.H2("Risk & Drawdowns"),
     html.Div(
         risk_free_warning(),
@@ -151,6 +152,25 @@ layout = html.Div([
     html.Br(),
     html.Hr(),
     html.Br(),
+    html.H3("Rolling Portfolio Volatility"),
+    html.Br(),
+    html.Div([
+        html.Label("Rolling Window (periods)"),
+        dcc.Slider(
+            id="risk-roll-window",
+            min=10,
+            max=252,
+            step=1,
+            value=63,
+            marks={13: "13", 26: "26", 52: "52", 63: "63", 126: "126", 252: "252"},
+            tooltip={"placement": "bottom", "always_visible": False},
+        ),
+    ], style={"maxWidth": "720px"}),
+    dcc.Loading(dcc.Graph(id="risk-rolling-vol-graph")),
+
+    html.Br(),
+    html.Hr(),
+    html.Br(),
     html.H3("VaR / CVaR (Historical)"),
     html.Div([
         html.Span("What do VaR/CVaR mean?", id="var-info", style=INFO_STYLE),
@@ -173,14 +193,16 @@ layout = html.Div([
     Output("risk-calmar-metric", "children"),
     Output("underwater-graph", "figure"),
     Output("drawdown-table", "data"),
+    Output("risk-rolling-vol-graph", "figure"),
     Output("var-rolling-graph", "figure"),
     Output("var-summary", "children"),
     Input("risk-date-range", "start_date"),
     Input("risk-date-range", "end_date"),
     Input("risk-frequency", "value"),
     Input("risk-benchmark", "value"),
+    Input("risk-roll-window", "value"),
 )
-def update_risk_dashboard(start_date, end_date, freq, benchmark):
+def update_risk_dashboard(start_date, end_date, freq, benchmark, roll_window):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     prices = PORTFOLIO_SERIES.loc[start:end].dropna()
@@ -193,6 +215,7 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
             "n/a",
             empty,
             [],
+            empty,
             empty,
             "No data available.",
         )
@@ -252,6 +275,14 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
             "total_periods": ep["total_duration"],
         })
 
+    roll_window = int(roll_window or (63 if freq == "Daily" else 26))
+    vol_fig = empty_figure("Not enough data for rolling volatility.")
+    if len(port_ret) >= roll_window + 1:
+        roll_vol = port_ret.rolling(roll_window).std() * np.sqrt(periods)
+        vol_fig = px.line(roll_vol, title=f"Rolling Volatility (window={roll_window})")
+        vol_fig.update_layout(height=420)
+        vol_fig.update_yaxes(title_text="Annualized Volatility", tickformat=".1%")
+
     var_alpha = 0.05
     var_95, cvar_95 = var_cvar(port_ret, alpha=var_alpha)
     var_99, cvar_99 = var_cvar(port_ret, alpha=0.01)
@@ -277,6 +308,7 @@ def update_risk_dashboard(start_date, end_date, freq, benchmark):
         f"{calmar:.2f}" if pd.notna(calmar) else "n/a",
         dd_fig,
         rows,
+        vol_fig,
         var_fig,
         var_summary,
     )
