@@ -5,7 +5,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from viz.plots import empty_figure
-from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
+from analytics.portfolio import (
+    build_portfolio_timeseries,
+    load_holdings_timeseries,
+    risk_free_warning,
+)
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 
 dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
@@ -16,7 +20,7 @@ dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
 HOLDINGS_TS = "data/holdings_timeseries.csv"
 BENCHMARKS_CSV = "data/benchmark_prices.csv"
 
-holdings_ts = pd.read_csv(HOLDINGS_TS, parse_dates=["Date"], index_col="Date").sort_index()
+holdings_ts = load_holdings_timeseries()
 portfolio_ts = build_portfolio_timeseries()
 bench = pd.read_csv(BENCHMARKS_CSV, parse_dates=["Date"], index_col="Date").sort_index()
 
@@ -164,7 +168,7 @@ layout = html.Div([
 # -----------------------
 # Helpers
 # -----------------------
-def _align_series(start_date, end_date, selected_benchmarks):
+def _align_series(start_date, end_date, selected_benchmarks, portfolio_id):
     """
     Returns aligned price series for portfolio and benchmarks over the date range.
     Portfolio series uses total_value.
@@ -173,6 +177,8 @@ def _align_series(start_date, end_date, selected_benchmarks):
     end = pd.to_datetime(end_date)
 
     # Portfolio
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    portfolio_ts = build_portfolio_timeseries(portfolio_id=portfolio_id or "schwab")
     if "total_value_clean_rf" in portfolio_ts.columns:
         pv = portfolio_ts["total_value_clean_rf"].copy()
     else:
@@ -216,9 +222,10 @@ def _daily_returns_df(price_df: pd.DataFrame) -> pd.DataFrame:
     Input("bench-date-range", "start_date"),
     Input("bench-date-range", "end_date"),
     Input("roll-window", "value"),
+    Input("portfolio-selector", "value"),
 )
-def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window):
-    pv, bm = _align_series(start_date, end_date, selected_benchmarks)
+def update_benchmark_graphs(selected_benchmarks, start_date, end_date, window, portfolio_id):
+    pv, bm = _align_series(start_date, end_date, selected_benchmarks, portfolio_id)
 
     if pv.empty:
         empty = empty_figure("No data available for selected range.")

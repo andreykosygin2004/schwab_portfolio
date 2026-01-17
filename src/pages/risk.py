@@ -201,11 +201,13 @@ layout = html.Div([
     Input("risk-frequency", "value"),
     Input("risk-benchmark", "value"),
     Input("risk-roll-window", "value"),
+    Input("portfolio-selector", "value"),
 )
-def update_risk_dashboard(start_date, end_date, freq, benchmark, roll_window):
+def update_risk_dashboard(start_date, end_date, freq, benchmark, roll_window, portfolio_id):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
-    prices = PORTFOLIO_SERIES.loc[start:end].dropna()
+    portfolio_series = load_portfolio_series(portfolio_id=portfolio_id or "schwab")
+    prices = portfolio_series.loc[start:end].dropna()
     if prices.empty:
         empty = empty_figure("No data available for selected range.")
         return (

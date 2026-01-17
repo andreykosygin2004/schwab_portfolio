@@ -11,13 +11,41 @@ import pandas as pd
 DATA_DIR = Path("data")
 HOLDINGS_TS = DATA_DIR / "holdings_timeseries.csv"
 TREASURY_CSV = DATA_DIR / "treasury.csv"
+HYPOTHETICAL_PORTFOLIO = DATA_DIR / "hypothetical_portfolio.csv"
+TRANSACTIONS_CSV = DATA_DIR / "schwab_transactions.csv"
 
 _RF_WARNING = None
 _RF_SOURCE = "unknown"
 
 
-def load_holdings_timeseries() -> pd.DataFrame:
+def load_holdings_timeseries(portfolio_id: str = "schwab") -> pd.DataFrame:
+    if portfolio_id == "algory":
+        return build_portfolio_timeseries(portfolio_id=portfolio_id)
     return pd.read_csv(HOLDINGS_TS, parse_dates=["Date"], index_col="Date").sort_index()
+
+
+def load_transactions(portfolio_id: str = "schwab") -> pd.DataFrame:
+    if portfolio_id == "algory":
+        portfolio = _load_hypothetical_portfolio()
+        if portfolio.empty:
+            return pd.DataFrame()
+        rows = []
+        for _, row in portfolio.iterrows():
+            shares = float(row["shares"])
+            price = float(row["entry_price"]) if pd.notna(row.get("entry_price")) else np.nan
+            amount = -shares * price if pd.notna(price) else np.nan
+            rows.append({
+                "Date": row["entry_date"].date().isoformat(),
+                "Action": "Buy",
+                "Symbol": row["symbol"],
+                "Quantity": shares,
+                "Price": price,
+                "Amount": amount,
+            })
+        return pd.DataFrame(rows)
+    if not TRANSACTIONS_CSV.exists():
+        return pd.DataFrame()
+    return pd.read_csv(TRANSACTIONS_CSV)
 
 
 def risk_free_warning() -> str | None:
@@ -118,7 +146,62 @@ def accrue_cash_balance(cash_balance: pd.Series, rf_returns: pd.Series) -> pd.Se
     return pd.Series(cash_value, index=flows.index)
 
 
-def build_portfolio_timeseries(freq: str = "Daily") -> pd.DataFrame:
+def _load_hypothetical_portfolio() -> pd.DataFrame:
+    if not HYPOTHETICAL_PORTFOLIO.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(HYPOTHETICAL_PORTFOLIO)
+    df.columns = [c.strip().lower() for c in df.columns]
+    df = df.rename(columns={"share name": "symbol"})
+    if "symbol" not in df.columns or "entry_date" not in df.columns:
+        return pd.DataFrame()
+    df["symbol"] = df["symbol"].astype(str).str.upper().str.strip()
+    df["entry_date"] = pd.to_datetime(df["entry_date"], errors="coerce")
+    df["shares"] = pd.to_numeric(df.get("shares"), errors="coerce")
+    df["entry_price"] = pd.to_numeric(df.get("entry_price"), errors="coerce")
+    return df.dropna(subset=["symbol", "entry_date", "shares"])
+
+
+def _build_hypothetical_timeseries() -> pd.DataFrame:
+    portfolio = _load_hypothetical_portfolio()
+    if portfolio.empty:
+        return pd.DataFrame()
+    tickers = portfolio["symbol"].unique().tolist()
+    start = portfolio["entry_date"].min()
+    end = pd.Timestamp.today().normalize()
+    from analytics_macro import load_ticker_prices
+    prices = load_ticker_prices(tickers, start=start, end=end)
+    if prices.empty:
+        return pd.DataFrame()
+    idx = prices.index
+    holdings = {}
+    for _, row in portfolio.iterrows():
+        symbol = row["symbol"]
+        entry_date = row["entry_date"]
+        shares = float(row["shares"])
+        if symbol not in prices.columns:
+            continue
+        if symbol not in holdings:
+            holdings[symbol] = pd.Series(0.0, index=idx)
+        holdings[symbol].loc[idx >= entry_date] = shares
+    shares_df = pd.DataFrame(holdings).reindex(idx).fillna(0.0)
+    mv_df = shares_df * prices.reindex(shares_df.index).fillna(0.0)
+    out = pd.DataFrame(index=idx)
+    for col in mv_df.columns:
+        out[f"MV_{col}"] = mv_df[col]
+    out["portfolio_value"] = mv_df.sum(axis=1)
+    cash_value = 5345.0
+    out["cash_balance"] = cash_value
+    out["cash_balance_clean"] = cash_value
+    out["total_value"] = out["portfolio_value"] + cash_value
+    out["total_value_rf"] = out["portfolio_value"] + cash_value
+    out["total_value_clean"] = out["portfolio_value"] + cash_value
+    out["total_value_clean_rf"] = out["portfolio_value"] + cash_value
+    return out
+
+
+def build_portfolio_timeseries(freq: str = "Daily", portfolio_id: str = "schwab") -> pd.DataFrame:
+    if portfolio_id == "algory":
+        return _build_hypothetical_timeseries()
     holdings_ts = load_holdings_timeseries()
     if holdings_ts.empty:
         return holdings_ts
@@ -143,8 +226,8 @@ def build_portfolio_timeseries(freq: str = "Daily") -> pd.DataFrame:
     return holdings_ts
 
 
-def load_portfolio_series(series_name: str = "total_value_clean_rf") -> pd.Series:
-    df = build_portfolio_timeseries()
+def load_portfolio_series(series_name: str = "total_value_clean_rf", portfolio_id: str = "schwab") -> pd.Series:
+    df = build_portfolio_timeseries(portfolio_id=portfolio_id)
     if series_name in df.columns:
         return df[series_name].astype(float)
     if "total_value_clean" in df.columns:

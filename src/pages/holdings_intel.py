@@ -13,6 +13,7 @@ from analytics.holdings_intel import (
 from analytics.risk import compute_returns
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from analytics.portfolio import load_holdings_timeseries, load_portfolio_series
+from analytics_macro import load_ticker_prices
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/holdings-intel", name="Holdings Risk")
@@ -128,9 +129,10 @@ layout = html.Div([
     Output("shock-holding", "value"),
     Input("holdings-date-range", "start_date"),
     Input("holdings-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
 )
-def update_holdings_options(start_date, end_date):
-    holdings_ts = load_holdings_timeseries()
+def update_holdings_options(start_date, end_date, portfolio_id):
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
     df = holdings_ts.loc[start_date:end_date]
     mv_cols = [c for c in df.columns if c.startswith("MV_")]
     if not mv_cols:
@@ -155,9 +157,10 @@ def update_holdings_options(start_date, end_date):
     Input("holdings-frequency", "value"),
     Input("shock-holding", "value"),
     Input("shock-slider", "value"),
+    Input("portfolio-selector", "value"),
 )
-def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value):
-    holdings_ts = load_holdings_timeseries()
+def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value, portfolio_id):
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
     df = holdings_ts.loc[start_date:end_date]
     if df.empty:
         empty = empty_figure("No data available for selected range.")
@@ -184,9 +187,7 @@ def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value
         html.P(f"Top 3 weight: {conc['top3']:.1%}"),
     ])
 
-    price_hist = pd.read_csv("data/historical_prices.csv", parse_dates=["Date"]).set_index("Date").sort_index()
-    price_hist = price_hist.loc[start_date:end_date]
-    price_hist = price_hist[price_hist.columns.intersection(weights.index)]
+    price_hist = load_ticker_prices(list(weights.index), start=pd.to_datetime(start_date), end=pd.to_datetime(end_date))
     if price_hist.empty:
         risk_fig = empty_figure("No price history for risk contribution.")
         return conc_text, None, risk_fig, [], "No price data for scenario.", "No price data for macro shocks."

@@ -15,7 +15,7 @@ from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
 from analytics_macro import load_ticker_prices
-from analytics.portfolio import load_portfolio_series, risk_free_warning
+from analytics.portfolio import load_holdings_timeseries, load_portfolio_series, load_transactions, risk_free_warning
 from utils.transactions import (
     build_positions_from_transactions,
     build_starting_positions_from_mv,
@@ -143,15 +143,19 @@ layout = html.Div([
     Input("attr-date-range", "end_date"),
     Input("attr-frequency", "value"),
     Input("attr-top-n", "value"),
+    Input("portfolio-selector", "value"),
 )
-def update_attribution(start_date, end_date, freq, top_n):
+def update_attribution(start_date, end_date, freq, top_n, portfolio_id):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     top_n = int(top_n or 10)
 
-    holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
-    price_hist = pd.read_csv("data/historical_prices.csv", parse_dates=["Date"]).set_index("Date").sort_index()
-    transactions = pd.read_csv("data/schwab_transactions.csv")
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    if portfolio_id == "algory":
+        price_hist = pd.DataFrame()
+    else:
+        price_hist = pd.read_csv("data/historical_prices.csv", parse_dates=["Date"]).set_index("Date").sort_index()
+    transactions = load_transactions(portfolio_id or "schwab")
     splits = pd.read_csv("data/stock_splits.csv")
 
     df = holdings_ts.loc[start:end]
@@ -181,7 +185,11 @@ def update_attribution(start_date, end_date, freq, top_n):
     if mv_cols:
         mv_df = df[mv_cols]
         tickers = [c.replace("MV_", "") for c in mv_cols]
-        price_slice = price_hist.loc[start_full:end, price_hist.columns.intersection(tickers)]
+        if portfolio_id == "algory":
+            price_hist = load_ticker_prices(tickers, start=start_full, end=end)
+            price_slice = price_hist
+        else:
+            price_slice = price_hist.loc[start_full:end, price_hist.columns.intersection(tickers)]
         if price_slice.empty:
             empty = empty_figure("No price data.")
             return warning, empty, [], [], empty, empty, []
@@ -235,7 +243,10 @@ def update_attribution(start_date, end_date, freq, top_n):
         total = latest.sum()
         weights = (latest / total).rename(lambda x: x.replace("MV_", "")) if total > 0 else latest * 0.0
         tickers = weights.index.tolist()
-        price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
+        if price_hist.empty:
+            price_slice = load_ticker_prices(tickers, start=start, end=end)
+        else:
+            price_slice = price_hist.loc[start:end, price_hist.columns.intersection(tickers)]
         if price_slice.empty:
             empty = empty_figure("No price data.")
             return warning, empty, [], debug_rows, empty, empty, []
@@ -279,7 +290,7 @@ def update_attribution(start_date, end_date, freq, top_n):
     factor_cum = empty_figure("No factor data.")
     memo = []
     if not factor_prices.empty:
-        port = load_portfolio_series().loc[start:end]
+        port = load_portfolio_series(portfolio_id=portfolio_id or "schwab").loc[start:end]
         port_ret = returns_from_prices(port, freq=freq)
         factor_ret = returns_from_prices(factor_prices, freq=freq)
         aligned_idx = port_ret.index.intersection(factor_ret.index)

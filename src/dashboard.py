@@ -57,6 +57,21 @@ app.layout = dbc.Container([
             },
         ),
     ),
+    html.Div(
+        [
+            html.Label("Portfolio", style={"fontWeight": "600", "marginRight": "8px"}),
+            dbc.Select(
+                id="portfolio-selector",
+                options=[
+                    {"label": "My Portfolio", "value": "schwab"},
+                    {"label": "Algory Portfolio", "value": "algory"},
+                ],
+                value="schwab",
+                style={"maxWidth": "240px"},
+            ),
+        ],
+        style={"display": "flex", "alignItems": "center", "gap": "8px", "marginTop": "12px"},
+    ),
     html.Div(dash.page_container, className="page-container"),
 ], fluid=True, className="app-shell")
 

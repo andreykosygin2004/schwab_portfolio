@@ -124,13 +124,14 @@ layout = html.Div([
     Input("factor-date-range", "end_date"),
     Input("factor-frequency", "value"),
     Input("factor-select", "value"),
+    Input("portfolio-selector", "value"),
 )
-def update_factor_page(start_date, end_date, freq, factors):
+def update_factor_page(start_date, end_date, freq, factors, portfolio_id):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     factors = factors or []
 
-    port_prices = PORTFOLIO_SERIES.loc[start:end].dropna()
+    port_prices = load_portfolio_series(portfolio_id=portfolio_id or "schwab").loc[start:end].dropna()
     if port_prices.empty:
         empty = empty_figure("No data available for selected range.")
         return [], empty, empty, empty, empty

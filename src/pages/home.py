@@ -4,18 +4,22 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from analytics import compute_performance_metrics
-from analytics.portfolio import build_portfolio_timeseries, risk_free_warning
+from analytics.portfolio import (
+    build_portfolio_timeseries,
+    load_holdings_timeseries,
+    load_portfolio_series,
+    risk_free_warning,
+)
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/", name="Portfolio Overview")
 
-prices = pd.read_csv("data/historical_prices.csv", index_col=0, parse_dates=True)
-tickers = prices.columns.tolist()
-
-holdings_ts = pd.read_csv("data/holdings_timeseries.csv", parse_dates=["Date"], index_col="Date").sort_index()
+holdings_ts = load_holdings_timeseries()
 portfolio_ts = build_portfolio_timeseries()
+mv_cols = [c for c in holdings_ts.columns if c.startswith("MV_")]
+mv_tickers = [c.replace("MV_", "") for c in mv_cols]
 mv_options = [{"label": "Portfolio Total", "value": "Portfolio Total"}] + [
-    {"label": t, "value": t} for t in tickers]
+    {"label": t, "value": t} for t in mv_tickers]
 
 GRAPH_HEIGHT = 450
 
@@ -101,7 +105,7 @@ layout = html.Div([
     style_header={"fontWeight": "bold"},
     style_table={"width": "60%", "margin": "auto"}
     ),
-    
+    html.Br(),
 ])
 
 def fmt_metric_value(v):
@@ -138,15 +142,33 @@ def metrics_dict_to_rows(metrics: dict):
 
 
 @callback(
+    Output("mv-ticker-select", "options"),
+    Output("mv-ticker-select", "value"),
+    Input("portfolio-selector", "value"),
+)
+def update_mv_options(portfolio_id):
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    mv_cols = [c for c in holdings_ts.columns if c.startswith("MV_")]
+    tickers = [c.replace("MV_", "") for c in mv_cols]
+    options = [{"label": "Portfolio Total", "value": "Portfolio Total"}] + [
+        {"label": t, "value": t} for t in tickers
+    ]
+    return options, ["Portfolio Total"]
+
+
+@callback(
     Output("mv-graph", "figure"),
     Input("mv-ticker-select", "value"),
     Input("mv-date-range", "start_date"),
-    Input("mv-date-range", "end_date")
+    Input("mv-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
 )
-def update_mv_graph(selected_holdings, start_date, end_date):
+def update_mv_graph(selected_holdings, start_date, end_date, portfolio_id):
     if not selected_holdings:
         return empty_figure("No holdings selected", height=GRAPH_HEIGHT)
 
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    portfolio_ts = build_portfolio_timeseries(portfolio_id=portfolio_id or "schwab")
     df_slice = holdings_ts.loc[start_date:end_date]
     portfolio_slice = portfolio_ts.loc[start_date:end_date]
     if df_slice.empty:
@@ -188,12 +210,15 @@ def update_mv_graph(selected_holdings, start_date, end_date):
     Input("mv-ticker-select", "value"),
     Input("mv-date-range", "start_date"),
     Input("mv-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
 )
-def update_portfolio_summary_table(selected_holdings, start_date, end_date):
+def update_portfolio_summary_table(selected_holdings, start_date, end_date, portfolio_id):
     # Only refresh table when Portfolio Total is selected
     if not selected_holdings or "Portfolio Total" not in selected_holdings:
         return no_update
 
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    portfolio_ts = build_portfolio_timeseries(portfolio_id=portfolio_id or "schwab")
     df_slice = holdings_ts.loc[pd.to_datetime(start_date):pd.to_datetime(end_date)].copy()
     if df_slice.empty:
         return [{"Metric": "error", "Value": "No data in selected range"}]
@@ -233,9 +258,12 @@ def update_portfolio_summary_table(selected_holdings, start_date, end_date):
     Output("pv-clean-summary-table", "data"),
     Input("pv-clean-date-range", "start_date"),
     Input("pv-clean-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
 )
-def update_pv_clean_graph_and_metrics(start_date, end_date):
+def update_pv_clean_graph_and_metrics(start_date, end_date, portfolio_id):
     # Slice by selected range (DatePickerRange gives strings)
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    portfolio_ts = build_portfolio_timeseries(portfolio_id=portfolio_id or "schwab")
     df = holdings_ts.loc[start_date:end_date].copy()
     portfolio_slice = portfolio_ts.loc[start_date:end_date]
 

@@ -204,6 +204,7 @@ layout = html.Div([
         style_table={"overflowX": "auto"},
         style_cell={"textAlign": "left", "padding": "6px"},
     ),
+    html.Br(),
 ])
 
 
@@ -226,6 +227,7 @@ layout = html.Div([
     Input("rotation-blotter-mode", "value"),
     Input("rotation-exec-date", "date"),
     Input("rotation-current-weights", "value"),
+    Input("portfolio-selector", "value"),
 )
 def update_factor_rotation(
     start_date,
@@ -240,6 +242,7 @@ def update_factor_rotation(
     blotter_mode,
     exec_date,
     current_weights_mode,
+    portfolio_id,
 ):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
@@ -286,7 +289,7 @@ def update_factor_rotation(
     bench_ret = rotation_monthly_returns(bench_prices[[benchmark]]) if not bench_prices.empty else pd.DataFrame()
     bench_ret = bench_ret[benchmark].reindex(returns.index).fillna(0.0) if not bench_ret.empty else pd.Series(dtype=float)
 
-    core = load_portfolio_series().loc[start:end]
+    core = load_portfolio_series(portfolio_id=portfolio_id or "schwab").loc[start:end]
     core_m = core.resample("M").last().pct_change().replace([np.inf, -np.inf], np.nan)
     core_m = core_m.reindex(returns.index).fillna(0.0)
     blended = (1 - float(alloc or 0.0)) * core_m + float(alloc or 0.0) * returns

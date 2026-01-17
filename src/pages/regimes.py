@@ -233,13 +233,14 @@ layout = html.Div([
     Input("overlay-preset", "value"),
     Input("overlay-leverage", "value"),
     Input("overlay-settings-table", "data"),
+    Input("portfolio-selector", "value"),
 )
-def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset, overlay_leverage, overlay_table):
+def update_regimes(start_date, end_date, freq, benchmark, preset, overlay_preset, overlay_leverage, overlay_table, portfolio_id):
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
     debug = False
 
-    portfolio = PORTFOLIO_SERIES.loc[start:end].dropna()
+    portfolio = load_portfolio_series(portfolio_id=portfolio_id or "schwab").loc[start:end].dropna()
     if portfolio.empty:
         empty = empty_figure("No data available.")
         return empty, [], "", empty, empty, empty, empty, empty, [], "", [], [], []

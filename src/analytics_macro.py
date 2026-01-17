@@ -99,8 +99,8 @@ def normalize_to_100(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Seri
     return (prices / first_vals) * 100.0
 
 
-def load_portfolio_series() -> pd.Series:
-    return _load_portfolio_series()
+def load_portfolio_series(portfolio_id: str = "schwab") -> pd.Series:
+    return _load_portfolio_series(portfolio_id=portfolio_id)
 
 
 def load_fred_series(
