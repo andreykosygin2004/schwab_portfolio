@@ -13,6 +13,7 @@ HOLDINGS_TS = DATA_DIR / "holdings_timeseries.csv"
 TREASURY_CSV = DATA_DIR / "treasury.csv"
 HYPOTHETICAL_PORTFOLIO = DATA_DIR / "hypothetical_portfolio.csv"
 TRANSACTIONS_CSV = DATA_DIR / "schwab_transactions.csv"
+ALGORY_INITIAL_CASH = 100_000.0
 
 _RF_WARNING = None
 _RF_SOURCE = "unknown"
@@ -174,35 +175,51 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
         return pd.DataFrame()
     idx = prices.index
     holdings = {}
+    cash = pd.Series(ALGORY_INITIAL_CASH, index=idx)
     for _, row in portfolio.iterrows():
         symbol = row["symbol"]
         entry_date = row["entry_date"]
         shares = float(row["shares"])
         if symbol not in prices.columns:
             continue
+        trade_dates = idx[idx >= entry_date]
+        if trade_dates.empty:
+            continue
+        trade_date = trade_dates[0]
         if symbol not in holdings:
             holdings[symbol] = pd.Series(0.0, index=idx)
-        holdings[symbol].loc[idx >= entry_date] = shares
+        holdings[symbol].loc[idx >= trade_date] = shares
+        hist_price = prices.loc[trade_date, symbol]
+        if pd.notna(hist_price):
+            cash.loc[trade_date:] -= shares * float(hist_price)
+        entry_price = float(row["entry_price"]) if pd.notna(row.get("entry_price")) else np.nan
+        if pd.notna(entry_price) and pd.notna(hist_price) and hist_price != 0:
+            diff = abs(entry_price - hist_price) / hist_price
+            if diff > 0.2:
+                warnings.warn(
+                    f"[WARN] Algory entry price for {symbol} on {trade_date.date()} "
+                    f"differs from adjusted close {hist_price:.2f} by {diff:.0%}."
+                )
     shares_df = pd.DataFrame(holdings).reindex(idx).fillna(0.0)
     mv_df = shares_df * prices.reindex(shares_df.index).fillna(0.0)
     out = pd.DataFrame(index=idx)
     for col in mv_df.columns:
         out[f"MV_{col}"] = mv_df[col]
     out["portfolio_value"] = mv_df.sum(axis=1)
-    cash_value = 5345.0
-    out["cash_balance"] = cash_value
-    out["cash_balance_clean"] = cash_value
-    out["total_value"] = out["portfolio_value"] + cash_value
-    out["total_value_rf"] = out["portfolio_value"] + cash_value
-    out["total_value_clean"] = out["portfolio_value"] + cash_value
-    out["total_value_clean_rf"] = out["portfolio_value"] + cash_value
+    out["cash_balance"] = cash
+    out["cash_balance_clean"] = cash
+    out["total_value"] = out["portfolio_value"] + cash
+    out["total_value_rf"] = out["portfolio_value"] + cash
+    out["total_value_clean"] = out["portfolio_value"] + cash
+    out["total_value_clean_rf"] = out["portfolio_value"] + cash
     return out
 
 
 def build_portfolio_timeseries(freq: str = "Daily", portfolio_id: str = "schwab") -> pd.DataFrame:
     if portfolio_id == "algory":
-        return _build_hypothetical_timeseries()
-    holdings_ts = load_holdings_timeseries()
+        holdings_ts = _build_hypothetical_timeseries()
+    else:
+        holdings_ts = load_holdings_timeseries()
     if holdings_ts.empty:
         return holdings_ts
 
