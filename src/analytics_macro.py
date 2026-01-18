@@ -100,7 +100,11 @@ def normalize_to_100(prices: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Seri
 
 
 def load_portfolio_series(portfolio_id: str = "schwab") -> pd.Series:
-    return _load_portfolio_series(portfolio_id=portfolio_id)
+    try:
+        return _load_portfolio_series(portfolio_id=portfolio_id)
+    except TypeError:
+        # Fallback for environments with older signature.
+        return _load_portfolio_series()
 
 
 def load_fred_series(
