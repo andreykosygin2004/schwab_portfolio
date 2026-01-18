@@ -147,7 +147,7 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
     if portfolio.empty:
         return pd.DataFrame()
     tickers = portfolio["symbol"].unique().tolist()
-    start = portfolio["entry_date"].min()
+    start = portfolio["entry_date"].min() - pd.Timedelta(days=7)
     end = pd.Timestamp.today().normalize()
     from analytics_macro import load_ticker_prices
     prices = load_ticker_prices(tickers, start=start, end=end)

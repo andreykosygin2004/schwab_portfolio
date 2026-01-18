@@ -3,6 +3,7 @@ from dash import html, dcc, Input, Output, callback, dash_table, no_update
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from analytics import compute_performance_metrics
 from analytics.portfolio import (
     build_portfolio_timeseries,
@@ -273,11 +274,14 @@ def update_pv_clean_graph_and_metrics(start_date, end_date, portfolio_id):
         return fig, []
 
     series_name = "total_value_clean_rf" if "total_value_clean_rf" in portfolio_slice.columns else "total_value_clean"
-    fig = px.line(
-        portfolio_slice,
-        y=series_name,
-        title="Portfolio Value (Clean)",
-    )
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=portfolio_slice.index,
+        y=portfolio_slice[series_name],
+        mode="lines",
+        name="Portfolio Value (Clean)",
+    ))
+    fig.update_layout(title="Portfolio Value (Clean)")
     fig.update_layout(
         yaxis_title="Portfolio Value ($)",
         xaxis_title="Date",
