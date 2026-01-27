@@ -1,0 +1,40 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.__pycache__
+
+# Virtual environments
+venv/
+.venv/
+
+# Test cache
+.pytest_cache/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+!.vscode/settings.json
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build/dist
+build/
+dist/
+*.egg-info/
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+credentials*.json
+
+# Project caches/artifacts
+data/macro_cache/
