@@ -9,6 +9,7 @@ from analytics.portfolio import (
     build_portfolio_timeseries,
     load_holdings_timeseries,
     load_portfolio_series,
+    get_portfolio_date_bounds,
     risk_free_warning,
 )
 from viz.plots import empty_figure
@@ -19,7 +20,7 @@ holdings_ts = load_holdings_timeseries()
 portfolio_ts = build_portfolio_timeseries()
 mv_cols = [c for c in holdings_ts.columns if c.startswith("MV_")]
 mv_tickers = [c.replace("MV_", "") for c in mv_cols]
-mv_options = [{"label": "Portfolio Total", "value": "Portfolio Total"}] + [
+mv_options = [{"label": "Portfolio Total", "value": "Portfolio Total"}, {"label": "Cash", "value": "CASH"}] + [
     {"label": t, "value": t} for t in mv_tickers]
 
 GRAPH_HEIGHT = 450
@@ -28,7 +29,6 @@ min_date = holdings_ts.index.min().date().isoformat()
 max_date = holdings_ts.index.max().date().isoformat()
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Portfolio Overview"),
     html.Div(
@@ -40,9 +40,6 @@ layout = html.Div([
         "over the selected window."
     ),
     html.Br(),
-
-    html.Br(),
-    html.H3("Holdings Market Values & Portfolio Total"),
     html.Br(),
     html.Label("Select Holdings:"),
     dcc.Dropdown(
@@ -82,6 +79,13 @@ layout = html.Div([
     html.Br(),
     html.H3("Portfolio Total (Excluding Negative Cash Transfers - Cash Earns Risk-Free)"),
     html.Br(),
+    html.Label("Select Holdings:"),
+    dcc.Dropdown(
+        id="pv-clean-ticker-select",
+        options=mv_options,
+        value=["Portfolio Total"],
+        multi=True
+    ),
     html.Label("Select Date Range:"),
     dcc.DatePickerRange(
         id="pv-clean-date-range",
@@ -143,6 +147,32 @@ def metrics_dict_to_rows(metrics: dict):
 
 
 @callback(
+    Output("mv-date-range", "min_date_allowed"),
+    Output("mv-date-range", "max_date_allowed"),
+    Output("mv-date-range", "start_date"),
+    Output("mv-date-range", "end_date"),
+    Output("pv-clean-date-range", "min_date_allowed"),
+    Output("pv-clean-date-range", "max_date_allowed"),
+    Output("pv-clean-date-range", "start_date"),
+    Output("pv-clean-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_home_date_ranges(portfolio_id):
+    bounds_min, bounds_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if bounds_min is None or bounds_max is None:
+        return min_date, max_date, min_date, max_date, min_date, max_date, min_date, max_date
+    min_allowed = bounds_min.date().isoformat()
+    max_allowed = bounds_max.date().isoformat()
+    if portfolio_id == "algory":
+        start = min_allowed
+        end = max_allowed
+    else:
+        start = min_date
+        end = max_date
+    return min_allowed, max_allowed, start, end, min_allowed, max_allowed, start, end
+
+
+@callback(
     Output("mv-ticker-select", "options"),
     Output("mv-ticker-select", "value"),
     Input("portfolio-selector", "value"),
@@ -151,7 +181,7 @@ def update_mv_options(portfolio_id):
     holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
     mv_cols = [c for c in holdings_ts.columns if c.startswith("MV_")]
     tickers = [c.replace("MV_", "") for c in mv_cols]
-    options = [{"label": "Portfolio Total", "value": "Portfolio Total"}] + [
+    options = [{"label": "Portfolio Total", "value": "Portfolio Total"}, {"label": "Cash", "value": "CASH"}] + [
         {"label": t, "value": t} for t in tickers
     ]
     return options, ["Portfolio Total"]
@@ -178,7 +208,7 @@ def update_mv_graph(selected_holdings, start_date, end_date, portfolio_id):
     show_portfolio_total = "Portfolio Total" in selected_holdings
 
     # Build MV columns for selected tickers only
-    selected_tickers = [t for t in selected_holdings if t != "Portfolio Total"]
+    selected_tickers = [t for t in selected_holdings if t not in ("Portfolio Total", "CASH")]
     mv_cols = [f"MV_{t}" for t in selected_tickers if f"MV_{t}" in holdings_ts.columns]
 
     if show_portfolio_total:
@@ -192,11 +222,21 @@ def update_mv_graph(selected_holdings, start_date, end_date, portfolio_id):
         # Optional: if you also want the selected tickers plotted alongside the total
         if mv_cols:
             out = out.join(df_slice[mv_cols])
+        if "CASH" in selected_holdings:
+            if "cash_balance" in portfolio_slice.columns:
+                out["Cash"] = portfolio_slice["cash_balance"]
+            elif "cash_value_rf" in portfolio_slice.columns:
+                out["Cash"] = portfolio_slice["cash_value_rf"]
         df = out
     else:
         if not mv_cols:
             return empty_figure("No valid tickers selected", height=GRAPH_HEIGHT)
         df = df_slice[mv_cols].copy()
+        if "CASH" in selected_holdings:
+            if "cash_balance" in portfolio_slice.columns:
+                df["Cash"] = portfolio_slice["cash_balance"]
+            elif "cash_value_rf" in portfolio_slice.columns:
+                df["Cash"] = portfolio_slice["cash_value_rf"]
 
     fig = px.line(df, title="Market Values / Portfolio Total")
     fig.update_layout(legend_title_text="Series", height=GRAPH_HEIGHT)
@@ -255,13 +295,29 @@ def update_portfolio_summary_table(selected_holdings, start_date, end_date, port
     return rows
 
 @callback(
+    Output("pv-clean-ticker-select", "options"),
+    Output("pv-clean-ticker-select", "value"),
+    Input("portfolio-selector", "value"),
+)
+def update_pv_clean_options(portfolio_id):
+    holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
+    mv_cols = [c for c in holdings_ts.columns if c.startswith("MV_")]
+    tickers = [c.replace("MV_", "") for c in mv_cols]
+    options = [{"label": "Portfolio Total", "value": "Portfolio Total"}, {"label": "Cash", "value": "CASH"}] + [
+        {"label": t, "value": t} for t in tickers
+    ]
+    return options, ["Portfolio Total"]
+
+
+@callback(
     Output("pv-clean-graph", "figure"),
     Output("pv-clean-summary-table", "data"),
+    Input("pv-clean-ticker-select", "value"),
     Input("pv-clean-date-range", "start_date"),
     Input("pv-clean-date-range", "end_date"),
     Input("portfolio-selector", "value"),
 )
-def update_pv_clean_graph_and_metrics(start_date, end_date, portfolio_id):
+def update_pv_clean_graph_and_metrics(selected_holdings, start_date, end_date, portfolio_id):
     # Slice by selected range (DatePickerRange gives strings)
     holdings_ts = load_holdings_timeseries(portfolio_id or "schwab")
     portfolio_ts = build_portfolio_timeseries(portfolio_id=portfolio_id or "schwab")
@@ -273,14 +329,36 @@ def update_pv_clean_graph_and_metrics(start_date, end_date, portfolio_id):
         fig = empty_figure("No data in selected range", height=GRAPH_HEIGHT)
         return fig, []
 
-    series_name = "total_value_clean_rf" if "total_value_clean_rf" in portfolio_slice.columns else "total_value_clean"
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=portfolio_slice.index,
-        y=portfolio_slice[series_name],
-        mode="lines",
-        name="Portfolio Value (Clean)",
-    ))
+    selected_holdings = selected_holdings or []
+    show_portfolio_total = "Portfolio Total" in selected_holdings or not selected_holdings
+    series_name = "total_value_clean_rf" if "total_value_clean_rf" in portfolio_slice.columns else "total_value_clean"
+    if show_portfolio_total:
+        fig.add_trace(go.Scatter(
+            x=portfolio_slice.index,
+            y=portfolio_slice[series_name],
+            mode="lines",
+            name="Portfolio Value (Clean)",
+        ))
+    selected_tickers = [t for t in selected_holdings if t not in ("Portfolio Total", "CASH")]
+    mv_cols = [f"MV_{t}" for t in selected_tickers if f"MV_{t}" in holdings_ts.columns]
+    if mv_cols:
+        for col in mv_cols:
+            fig.add_trace(go.Scatter(
+                x=df.index,
+                y=df[col],
+                mode="lines",
+                name=col.replace("MV_", ""),
+            ))
+    if "CASH" in selected_holdings:
+        cash_col = "cash_value_clean_rf" if "cash_value_clean_rf" in portfolio_slice.columns else "cash_balance_clean"
+        if cash_col in portfolio_slice.columns:
+            fig.add_trace(go.Scatter(
+                x=portfolio_slice.index,
+                y=portfolio_slice[cash_col],
+                mode="lines",
+                name="Cash (Clean)",
+            ))
     fig.update_layout(title="Portfolio Value (Clean)")
     fig.update_layout(
         yaxis_title="Portfolio Value ($)",

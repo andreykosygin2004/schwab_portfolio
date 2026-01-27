@@ -15,7 +15,14 @@ from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
 from analytics_macro import load_ticker_prices
-from analytics.portfolio import load_holdings_timeseries, load_portfolio_series, load_transactions, risk_free_warning
+from analytics.portfolio import (
+    build_portfolio_timeseries,
+    get_portfolio_date_bounds,
+    load_holdings_timeseries,
+    load_portfolio_series,
+    load_transactions,
+    risk_free_warning,
+)
 from utils.transactions import (
     build_positions_from_transactions,
     build_starting_positions_from_mv,
@@ -32,7 +39,6 @@ FACTOR_OPTIONS = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
 
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Attribution"),
     html.Div(
@@ -129,6 +135,22 @@ layout = html.Div([
     html.Br(),
     html.Ul(id="attr-memo"),
 ])
+
+
+@callback(
+    Output("attr-date-range", "min_date_allowed"),
+    Output("attr-date-range", "max_date_allowed"),
+    Output("attr-date-range", "start_date"),
+    Output("attr-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_attr_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if port_min is None or port_max is None:
+        return DEFAULT_START.date(), DEFAULT_END.date(), DEFAULT_START.date(), DEFAULT_END.date()
+    if portfolio_id == "algory":
+        return port_min, port_max, port_min.date(), port_max.date()
+    return port_min, port_max, DEFAULT_START.date(), port_max.date()
 
 
 @callback(
@@ -230,12 +252,38 @@ def update_attribution(start_date, end_date, freq, top_n, portfolio_id):
         held = positions.shift(1).fillna(0.0) > 0
         total_return = (1 + returns.where(held, 0.0)).prod() - 1
         total_contrib = avg_weight * total_return
-        total_pnl = total_contrib.sum()
         attr_df = pd.DataFrame({
             "avg_weight": avg_weight,
             "total_return": total_return,
             "contribution": total_contrib,
         })
+        if portfolio_id != "algory":
+            portfolio_ts = build_portfolio_timeseries(portfolio_id=portfolio_id or "schwab")
+            cash_series = pd.Series(dtype=float)
+            if not portfolio_ts.empty:
+                cash_series = portfolio_ts.get("cash_value_clean_rf")
+                if cash_series is None:
+                    cash_series = portfolio_ts.get("cash_value_rf")
+                if cash_series is None:
+                    cash_series = portfolio_ts.get("cash_balance_clean", pd.Series(dtype=float))
+            if not cash_series.empty:
+                cash_series = cash_series.loc[start:end]
+                if freq == "Weekly":
+                    cash_series = cash_series.resample("W-FRI").last()
+                cash_series = cash_series.reindex(returns.index).ffill().fillna(0.0)
+                mv_total = mv.sum(axis=1).reindex(returns.index).fillna(0.0)
+                total_with_cash = mv_total + cash_series
+                cash_weights = cash_series / total_with_cash.replace(0, np.nan)
+                avg_cash_weight = cash_weights.shift(1).mean()
+                cash_ret = cash_series.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+                cash_total_return = (1 + cash_ret).prod() - 1
+                cash_contrib = avg_cash_weight * cash_total_return
+                attr_df.loc["CASH"] = {
+                    "avg_weight": avg_cash_weight,
+                    "total_return": cash_total_return,
+                    "contribution": cash_contrib,
+                }
+        total_pnl = attr_df["contribution"].sum()
         attr_df["pct_total"] = attr_df["contribution"] / total_pnl if total_pnl != 0 else 0.0
         warning = "Using transaction-inferred positions (reinvested capital view; MoneyLink excluded)."
     if attr_df.empty:
@@ -301,7 +349,7 @@ def update_attribution(start_date, end_date, freq, top_n, portfolio_id):
         contrib_df = factor_period_contributions(betas, factor_ret)
         if not contrib_df.empty:
             contrib_m = contrib_df.resample("M").sum()
-            factor_bars = px.bar(contrib_m, title="Top Factor Drivers (Monthly, Window)")
+            factor_bars = px.bar(contrib_m, title="Top Factor Drivers (Static Betas, Monthly)")
             factor_bars.update_layout(barmode="relative", height=420)
             factor_bars.update_yaxes(tickformat=".1%")
             explained = contrib_df.sum(axis=1)
@@ -311,7 +359,7 @@ def update_attribution(start_date, end_date, freq, top_n, portfolio_id):
             cum_resid = (1 + residual).cumprod() - 1
             factor_cum = px.line(
                 pd.DataFrame({"Total": cum_total, "Explained": cum_explained, "Residual": cum_resid}),
-                title="Cumulative Explained vs Residual (Window)",
+                title="Cumulative Explained vs Residual (Static Betas)",
             )
             factor_cum.update_layout(height=420)
             factor_cum.update_yaxes(tickformat=".1%")

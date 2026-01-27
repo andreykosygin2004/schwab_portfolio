@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 from analytics.factors import align_returns, factor_contributions, fit_ols, rolling_multifactor
 from analytics.risk import compute_returns
 from analytics_macro import load_portfolio_series, load_ticker_prices
+from analytics.portfolio import get_portfolio_date_bounds
 from analytics.portfolio import risk_free_warning
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from viz.plots import empty_figure
@@ -28,7 +29,6 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Factor Attribution"),
     html.Div(
@@ -115,6 +115,22 @@ layout = html.Div([
 
 
 @callback(
+    Output("factor-date-range", "min_date_allowed"),
+    Output("factor-date-range", "max_date_allowed"),
+    Output("factor-date-range", "start_date"),
+    Output("factor-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_factor_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if port_min is None or port_max is None:
+        return DEFAULT_START.date(), DEFAULT_END.date(), DEFAULT_START.date(), DEFAULT_END.date()
+    if portfolio_id == "algory":
+        return port_min, port_max, port_min.date(), port_max.date()
+    return port_min, port_max, DEFAULT_START.date(), port_max.date()
+
+
+@callback(
     Output("factor-summary-table", "data"),
     Output("rolling-betas-graph", "figure"),
     Output("factor-contrib-graph", "figure"),
@@ -182,7 +198,7 @@ def update_factor_page(start_date, end_date, freq, factors, portfolio_id):
         contrib_resampled = contrib.resample("M").sum()
         contrib_fig = px.bar(
             contrib_resampled,
-            title="Model-based Factor Contribution (Monthly, Explained Return)",
+            title="Model-based Factor Contribution (Rolling Betas, Monthly)",
             labels={"value": "Contribution", "index": "Date"},
         )
         contrib_fig.update_layout(barmode="relative", height=450)
@@ -194,7 +210,7 @@ def update_factor_page(start_date, end_date, freq, factors, portfolio_id):
         residual_fig = go.Figure()
         residual_fig.add_trace(go.Scatter(x=residual.index, y=residual.values, name="Residual"))
         residual_fig.add_trace(go.Scatter(x=cumulative_residual.index, y=cumulative_residual.values, name="Cumulative Residual"))
-        residual_fig.update_layout(title="Model Residual (Period) and Cumulative Residual", height=450, legend_title_text="")
+        residual_fig.update_layout(title="Model Residual (Rolling Betas) and Cumulative Residual", height=450, legend_title_text="")
         residual_fig.update_yaxes(tickformat=".1%")
 
     stability_fig = empty_figure("Not enough data for stability diagnostics.")

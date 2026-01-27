@@ -44,7 +44,6 @@ TARGET_LABELS = {
 
 layout = html.Div([
     html.Br(),
-    html.Br(),
     html.H2("Regime Forecast"),
     html.P("Weekly probability of entering the selected regime within the chosen horizon."),
     html.Br(),
@@ -173,8 +172,12 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
         empty = empty_figure("Insufficient data for splits.")
         return empty, empty, "Insufficient data for splits.", None, None, None, None
 
-    model, scaler = train_model(split["X_train"], split["y_train"], model_name)
-    probs = predict_proba(model, scaler, X_full.dropna())
+    if split["y_train"].nunique() < 2:
+        const_prob = float(split["y_train"].mean()) if not split["y_train"].empty else 0.0
+        probs = pd.Series(const_prob, index=X_full.dropna().index)
+    else:
+        model, scaler = train_model(split["X_train"], split["y_train"], model_name)
+        probs = predict_proba(model, scaler, X_full.dropna())
     probs = probs.sort_index()
 
     eval_idx = probs.index.intersection(y.index)
@@ -264,6 +267,10 @@ def update_forecast(horizon, model_name, target_choice, refresh_clicks):
         split_target = split_by_time(X_target, y_target, splits)
         if split_target["X_train"].empty:
             latest_rows.append({"Target": choice, "Probability": "N/A"})
+            continue
+        if split_target["y_train"].nunique() < 2:
+            const_prob = float(split_target["y_train"].mean()) if not split_target["y_train"].empty else np.nan
+            latest_rows.append({"Target": choice, "Probability": f"{const_prob:.1%}" if pd.notna(const_prob) else "N/A"})
             continue
         model_t, scaler_t = train_model(split_target["X_train"], split_target["y_train"], model_name)
         probs_t = predict_proba(model_t, scaler_t, X_target)

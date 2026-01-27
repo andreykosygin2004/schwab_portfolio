@@ -12,7 +12,7 @@ from analytics.holdings_intel import (
 )
 from analytics.risk import compute_returns
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
-from analytics.portfolio import load_holdings_timeseries, load_portfolio_series
+from analytics.portfolio import get_portfolio_date_bounds, load_holdings_timeseries, load_portfolio_series
 from analytics_macro import load_ticker_prices
 from viz.plots import empty_figure
 
@@ -28,7 +28,6 @@ INFO_STYLE = {"cursor": "pointer", "textDecoration": "underline"}
 
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Holdings Intelligence"),
     html.P("Analyze concentration, risk contribution, and scenario shocks."),
@@ -63,8 +62,6 @@ layout = html.Div([
     html.P("Examine the weight of top 1 and top 3 holdings and HHI."),
     html.Br(),
     html.Div(id="concentration-metrics"),
-
-    html.Br(),
     html.Hr(),
     html.Br(),
     html.H3("Risk Contribution"),
@@ -122,6 +119,22 @@ layout = html.Div([
     html.Div(id="macro-shock-output"),
 
 ])
+
+
+@callback(
+    Output("holdings-date-range", "min_date_allowed"),
+    Output("holdings-date-range", "max_date_allowed"),
+    Output("holdings-date-range", "start_date"),
+    Output("holdings-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_holdings_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if port_min is None or port_max is None:
+        return MIN_DATE, MAX_DATE, DEFAULT_START.date(), DEFAULT_END.date()
+    if portfolio_id == "algory":
+        return port_min, port_max, port_min.date(), port_max.date()
+    return port_min, port_max, DEFAULT_START.date(), port_max.date()
 
 
 @callback(
@@ -190,7 +203,7 @@ def update_holdings_intel(start_date, end_date, freq, shock_holding, shock_value
     price_hist = load_ticker_prices(list(weights.index), start=pd.to_datetime(start_date), end=pd.to_datetime(end_date))
     if price_hist.empty:
         risk_fig = empty_figure("No price history for risk contribution.")
-        return conc_text, None, risk_fig, [], "No price data for scenario.", "No price data for macro shocks."
+        return conc_text, None, risk_fig, [], "No price data for scenario.", "No data for macro shocks."
 
     returns = compute_returns(price_hist, freq=freq)
     if returns.empty:

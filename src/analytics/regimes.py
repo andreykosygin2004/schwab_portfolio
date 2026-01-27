@@ -6,7 +6,7 @@ import pandas as pd
 
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
 from analytics.risk import compute_returns, drawdown_series
-from analytics_macro import load_ticker_prices
+from analytics_macro import compute_returns, load_ticker_prices
 
 
 PROXY_TICKERS = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
@@ -74,9 +74,7 @@ def resample_prices(prices: pd.Series | pd.DataFrame, freq: str) -> pd.Series | 
 
 
 def returns_from_prices(prices: pd.Series | pd.DataFrame, freq: str) -> pd.Series | pd.DataFrame:
-    prices = resample_prices(prices, freq)
-    returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
-    return returns
+    return compute_returns(prices, freq)
 
 
 def get_thresholds(preset: str) -> dict[str, float]:

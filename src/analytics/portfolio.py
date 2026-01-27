@@ -153,6 +153,10 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
     prices = load_ticker_prices(tickers, start=start, end=end)
     if prices.empty:
         return pd.DataFrame()
+    last_valid = prices.apply(lambda s: s.dropna().index.max() if s.dropna().size else pd.NaT)
+    if last_valid.notna().any():
+        common_end = last_valid.min()
+        prices = prices.loc[:common_end]
     idx = prices.index
     holdings = {}
     cash = pd.Series(ALGORY_INITIAL_CASH, index=idx)
@@ -162,7 +166,8 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
         shares = float(row["shares"])
         if symbol not in prices.columns:
             continue
-        trade_dates = idx[idx >= entry_date]
+        price_series = prices[symbol].dropna()
+        trade_dates = price_series.index[price_series.index >= entry_date]
         if trade_dates.empty:
             continue
         trade_date = trade_dates[0]
@@ -232,3 +237,10 @@ def load_portfolio_series(series_name: str = "total_value_clean_rf", portfolio_i
     if "total_value" in df.columns:
         return df["total_value"].astype(float)
     raise ValueError("No usable portfolio series found in holdings timeseries.")
+
+
+def get_portfolio_date_bounds(portfolio_id: str = "schwab") -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    df = build_portfolio_timeseries(portfolio_id=portfolio_id)
+    if df.empty:
+        return None, None
+    return df.index.min(), df.index.max()

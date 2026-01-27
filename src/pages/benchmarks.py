@@ -8,6 +8,7 @@ from viz.plots import empty_figure
 from analytics.portfolio import (
     build_portfolio_timeseries,
     load_holdings_timeseries,
+    get_portfolio_date_bounds,
     risk_free_warning,
 )
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
@@ -97,7 +98,6 @@ benchmark_options = [{"label": c, "value": c} for c in bench.columns]
 # Layout
 # -----------------------
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Benchmarks & Performance"),
     html.Div(
@@ -214,6 +214,32 @@ def _daily_returns_df(price_df: pd.DataFrame) -> pd.DataFrame:
 # -----------------------
 # Callbacks
 # -----------------------
+@callback(
+    Output("bench-date-range", "min_date_allowed"),
+    Output("bench-date-range", "max_date_allowed"),
+    Output("bench-date-range", "start_date"),
+    Output("bench-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_bench_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    bench_min = bench.index.min()
+    bench_max = bench.index.max()
+    if port_min is None or port_max is None:
+        min_allowed = bench_min
+        max_allowed = bench_max
+    else:
+        min_allowed = max(port_min, bench_min)
+        max_allowed = min(port_max, bench_max)
+    if portfolio_id == "algory":
+        start = min_allowed
+        end = max_allowed
+    else:
+        start = max(DEFAULT_START_DATE_ANALYSIS, min_allowed)
+        end = max_allowed
+    return min_allowed, max_allowed, start, end
+
+
 @callback(
     Output("cumret-graph", "figure"),
     Output("rolling-excess-graph", "figure"),

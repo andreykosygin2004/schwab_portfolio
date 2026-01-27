@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
-from analytics.portfolio import load_portfolio_series, risk_free_warning
+from analytics.portfolio import get_portfolio_date_bounds, load_portfolio_series, risk_free_warning
 from analytics.regimes import compute_regime_features, label_regimes, load_proxy_prices, returns_from_prices
 from analytics.overlay import (
     apply_overlay,
@@ -65,7 +65,6 @@ def _perf_summary(returns: pd.Series, periods: int) -> dict:
 
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Regimes"),
     html.Div(
@@ -210,6 +209,22 @@ layout = html.Div([
         style_cell={"textAlign": "left", "padding": "6px"},
     ),
 ])
+
+
+@callback(
+    Output("regime-date-range", "min_date_allowed"),
+    Output("regime-date-range", "max_date_allowed"),
+    Output("regime-date-range", "start_date"),
+    Output("regime-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_regime_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if port_min is None or port_max is None:
+        return DEFAULT_START.date(), DEFAULT_END.date(), DEFAULT_START.date(), DEFAULT_END.date()
+    if portfolio_id == "algory":
+        return port_min, port_max, port_min.date(), port_max.date()
+    return port_min, port_max, DEFAULT_START.date(), port_max.date()
 
 
 @callback(

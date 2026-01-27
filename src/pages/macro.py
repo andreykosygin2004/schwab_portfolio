@@ -18,7 +18,7 @@ from analytics_macro import (
     load_fred_series,
     load_ticker_prices,
 )
-from analytics.portfolio import risk_free_warning
+from analytics.portfolio import get_portfolio_date_bounds, risk_free_warning
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 
 dash.register_page(__name__, path="/macro", name="Macro Analysis")
@@ -101,7 +101,6 @@ def _ytd_change(series: pd.Series) -> float:
 
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Macro Dashboard"),
     html.P("Monitor macro drivers and proxy signals that influence portfolio risk and returns."),
@@ -229,6 +228,22 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="macro-heatmap", style=GRAPH_STYLE, config={"responsive": False})),
 ])
 
+
+
+@callback(
+    Output("macro-date-range", "min_date_allowed"),
+    Output("macro-date-range", "max_date_allowed"),
+    Output("macro-date-range", "start_date"),
+    Output("macro-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_macro_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if port_min is None or port_max is None:
+        return DEFAULT_START.date(), DEFAULT_END.date(), DEFAULT_START.date(), DEFAULT_END.date()
+    if portfolio_id == "algory":
+        return port_min, port_max, port_min.date(), port_max.date()
+    return port_min, port_max, DEFAULT_START.date(), port_max.date()
 
 
 @callback(

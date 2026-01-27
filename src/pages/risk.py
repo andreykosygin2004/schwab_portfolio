@@ -17,7 +17,7 @@ from analytics.risk import (
 )
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from analytics_macro import load_portfolio_series, load_ticker_prices
-from analytics.portfolio import risk_free_warning
+from analytics.portfolio import get_portfolio_date_bounds, risk_free_warning
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/risk", name="Portfolio Risk")
@@ -58,7 +58,6 @@ def _format_pct(value: float) -> str:
 
 
 layout = html.Div([
-    html.Br(),
     html.Br(),
     html.H2("Risk & Drawdowns"),
     html.Div(
@@ -184,6 +183,22 @@ layout = html.Div([
     dcc.Loading(dcc.Graph(id="var-rolling-graph")),
     html.Div(id="var-summary"),
 ])
+
+
+@callback(
+    Output("risk-date-range", "min_date_allowed"),
+    Output("risk-date-range", "max_date_allowed"),
+    Output("risk-date-range", "start_date"),
+    Output("risk-date-range", "end_date"),
+    Input("portfolio-selector", "value"),
+)
+def update_risk_date_range(portfolio_id):
+    port_min, port_max = get_portfolio_date_bounds(portfolio_id or "schwab")
+    if port_min is None or port_max is None:
+        return MIN_DATE, MAX_DATE, DEFAULT_START.date(), DEFAULT_END.date()
+    if portfolio_id == "algory":
+        return port_min, port_max, port_min.date(), port_max.date()
+    return port_min, port_max, DEFAULT_START.date(), port_max.date()
 
 
 @callback(
