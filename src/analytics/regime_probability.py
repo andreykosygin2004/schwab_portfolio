@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import roc_auc_score, average_precision_score, brier_score_loss
+
+from analytics.constants import ANALYSIS_END, ANALYSIS_START
+from analytics.regimes import (
+    clear_proxy_cache,
+    compute_regime_features,
+    label_regimes,
+    load_proxy_prices,
+    returns_from_prices,
+)
+from analytics_macro import clear_price_cache
+
+
+PROXIES = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]
+RISK_OFF_LABEL = "Risk-Off / Credit Stress"
+
+
+@dataclass
+class SplitConfig:
+    train_end: pd.Timestamp
+    val_end: pd.Timestamp
+    test_start: pd.Timestamp
+    test_end: pd.Timestamp
+
+
+def make_weekly_returns(start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    prices = load_proxy_prices(start, end)
+    if prices.empty:
+        return pd.DataFrame()
+    daily_ret = prices.pct_change().replace([np.inf, -np.inf], np.nan)
+    weekly = (1 + daily_ret).resample("W-FRI").prod() - 1
+    return weekly.dropna(how="all")
+
+
+def make_weekly_regimes(start: pd.Timestamp, end: pd.Timestamp) -> pd.Series:
+    prices = load_proxy_prices(start, end)
+    features = compute_regime_features(prices, freq="Weekly")
+    labels = label_regimes(features, "Balanced")
+    return labels.dropna()
+
+
+def get_latest_available_date(
+    start: pd.Timestamp,
+    end: pd.Timestamp | None = None,
+    refresh: bool = False,
+    hard_refresh: bool = False,
+) -> pd.Timestamp | None:
+    if hard_refresh:
+        clear_price_cache(PROXIES)
+    if refresh or hard_refresh:
+        clear_proxy_cache()
+    if end is None:
+        end = pd.Timestamp.today()
+    prices = load_proxy_prices(start, end)
+    if prices.empty:
+        return None
+    usable = prices.dropna(how="any")
+    if not usable.empty:
+        return usable.index.max()
+    return prices.dropna(how="all").index.max()
+
+
+def make_labels(regimes: pd.Series, horizon_weeks: int) -> pd.Series:
+    if regimes.empty:
+        return pd.Series(dtype=int)
+    y = []
+    idx = regimes.index
+    for i in range(len(idx) - horizon_weeks):
+        future = regimes.iloc[i + 1:i + 1 + horizon_weeks]
+        y.append(int((future == RISK_OFF_LABEL).any()))
+    return pd.Series(y, index=idx[:-horizon_weeks])
+
+
+def make_entry_event_label(regimes: pd.Series, target_label: str, horizon_weeks: int) -> pd.Series:
+    if regimes.empty:
+        return pd.Series(dtype=int)
+    unique = set(regimes.dropna().unique())
+    if target_label not in unique:
+        raise ValueError(f"Target label '{target_label}' not found in regime series.")
+    y = []
+    idx = regimes.index
+    for i in range(len(idx) - horizon_weeks):
+        future = regimes.iloc[i + 1:i + 1 + horizon_weeks]
+        y.append(int((future == target_label).any()))
+    return pd.Series(y, index=idx[:-horizon_weeks])
+
+
+def build_features(weekly_returns: pd.DataFrame, regimes: pd.Series) -> pd.DataFrame:
+    if weekly_returns.empty or regimes.empty:
+        return pd.DataFrame()
+    df = pd.DataFrame(index=weekly_returns.index)
+    if "SPY" in weekly_returns.columns:
+        df["spy_4w"] = weekly_returns["SPY"].rolling(4).sum()
+        df["spy_12w"] = weekly_returns["SPY"].rolling(12).sum()
+        df["spy_vol_8w"] = weekly_returns["SPY"].rolling(8).std()
+        df["spy_dd_26w"] = (1 + weekly_returns["SPY"]).rolling(26).apply(
+            lambda x: (x.prod() / x.cummax().max()) - 1, raw=False
+        )
+    if "QQQ" in weekly_returns.columns:
+        df["qqq_4w"] = weekly_returns["QQQ"].rolling(4).sum()
+        df["qqq_12w"] = weekly_returns["QQQ"].rolling(12).sum()
+        df["qqq_vol_8w"] = weekly_returns["QQQ"].rolling(8).std()
+    if "HYG" in weekly_returns.columns:
+        df["hyg_dd_26w"] = (1 + weekly_returns["HYG"]).rolling(26).apply(
+            lambda x: (x.prod() / x.cummax().max()) - 1, raw=False
+        )
+        df["hyg_4w"] = weekly_returns["HYG"].rolling(4).sum()
+    if "HYG" in weekly_returns.columns and "TLT" in weekly_returns.columns:
+        df["hyg_tlt_4w"] = (weekly_returns["HYG"] - weekly_returns["TLT"]).rolling(4).sum()
+    if "UUP" in weekly_returns.columns:
+        df["uup_4w"] = weekly_returns["UUP"].rolling(4).sum()
+    if "TLT" in weekly_returns.columns:
+        df["tlt_4w"] = weekly_returns["TLT"].rolling(4).sum()
+    if "USO" in weekly_returns.columns:
+        df["uso_4w"] = weekly_returns["USO"].rolling(4).sum()
+    if "USO" in weekly_returns.columns and "TIP" in weekly_returns.columns:
+        df["uso_tip_4w"] = (weekly_returns["USO"] - weekly_returns["TIP"]).rolling(4).sum()
+
+    regimes = regimes.reindex(df.index).ffill()
+    if regimes.dropna().empty:
+        return pd.DataFrame()
+    df["regime"] = regimes
+    df["weeks_in_regime"] = regimes.groupby((regimes != regimes.shift()).cumsum()).cumcount() + 1
+    df = pd.get_dummies(df, columns=["regime"], prefix="regime")
+    df = df.loc[:, df.notna().any()]
+    df = df.dropna()
+    return df
+
+
+def default_splits() -> SplitConfig:
+    return SplitConfig(
+        train_end=pd.Timestamp("2020-12-31"),
+        val_end=pd.Timestamp("2023-12-31"),
+        test_start=ANALYSIS_START,
+        test_end=ANALYSIS_END,
+    )
+
+
+def resolve_splits(index: pd.DatetimeIndex, splits: SplitConfig) -> SplitConfig:
+    if index.empty:
+        return splits
+    min_dt = index.min()
+    max_dt = index.max()
+    n = len(index)
+    if splits.train_end < min_dt or splits.val_end < min_dt:
+        train_end = index[max(0, int(n * 0.6))]
+        val_end = index[max(0, int(n * 0.8))]
+    else:
+        train_end = min(splits.train_end, max_dt)
+        val_end = min(splits.val_end, max_dt)
+
+    test_start = max(splits.test_start, min_dt)
+    test_end = min(splits.test_end, max_dt)
+
+    if test_start <= train_end:
+        test_start = index[max(0, int(n * 0.85))]
+    if test_start > test_end:
+        test_start = index[max(0, int(n * 0.85))]
+        test_end = max_dt
+    if val_end <= train_end:
+        val_end = index[max(0, int(n * 0.7))]
+    if val_end >= test_start:
+        val_end = index[max(0, int(n * 0.75))]
+    return SplitConfig(train_end=train_end, val_end=val_end, test_start=test_start, test_end=test_end)
+
+
+def split_by_time(X: pd.DataFrame, y: pd.Series, splits: SplitConfig) -> dict:
+    train_mask = X.index <= splits.train_end
+    val_mask = (X.index > splits.train_end) & (X.index <= splits.val_end)
+    test_mask = (X.index >= splits.test_start) & (X.index <= splits.test_end)
+    return {
+        "X_train": X.loc[train_mask],
+        "y_train": y.loc[train_mask],
+        "X_val": X.loc[val_mask],
+        "y_val": y.loc[val_mask],
+        "X_test": X.loc[test_mask],
+        "y_test": y.loc[test_mask],
+    }
+
+
+def train_model(X: pd.DataFrame, y: pd.Series, model_name: str) -> tuple[object, StandardScaler]:
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X.values)
+    if model_name == "Gradient Boosting":
+        model = GradientBoostingClassifier(random_state=42)
+        model.fit(X_scaled, y.values)
+        return model, scaler
+    model = LogisticRegression(max_iter=1000, class_weight="balanced")
+    model.fit(X_scaled, y.values)
+    return model, scaler
+
+
+def predict_proba(model: LogisticRegression, scaler: StandardScaler, X: pd.DataFrame) -> pd.Series:
+    X_scaled = scaler.transform(X.values)
+    proba = model.predict_proba(X_scaled)[:, 1]
+    return pd.Series(proba, index=X.index)
+
+
+def evaluate_model(y_true: pd.Series, y_prob: pd.Series) -> dict:
+    if y_true.empty:
+        return {}
+    metrics = {
+        "prevalence": float(y_true.mean()),
+        "roc_auc": float(roc_auc_score(y_true, y_prob)) if y_true.nunique() > 1 else np.nan,
+        "pr_auc": float(average_precision_score(y_true, y_prob)) if y_true.nunique() > 1 else np.nan,
+        "brier": float(brier_score_loss(y_true, y_prob)),
+    }
+    return metrics
