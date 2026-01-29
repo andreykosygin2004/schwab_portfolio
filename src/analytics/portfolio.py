@@ -21,11 +21,15 @@ _RF_WARNING = None
 def load_holdings_timeseries(portfolio_id: str = "schwab") -> pd.DataFrame:
     if portfolio_id == "algory":
         return build_portfolio_timeseries(portfolio_id=portfolio_id)
+    if not TRANSACTIONS_CSV.exists():
+        return _build_hypothetical_timeseries()
+    if not HOLDINGS_TS.exists():
+        return pd.DataFrame()
     return pd.read_csv(HOLDINGS_TS, parse_dates=["Date"], index_col="Date").sort_index()
 
 
 def load_transactions(portfolio_id: str = "schwab") -> pd.DataFrame:
-    if portfolio_id == "algory":
+    if portfolio_id == "algory" or not TRANSACTIONS_CSV.exists():
         portfolio = _load_hypothetical_portfolio()
         if portfolio.empty:
             return pd.DataFrame()
@@ -43,8 +47,6 @@ def load_transactions(portfolio_id: str = "schwab") -> pd.DataFrame:
                 "Amount": amount,
             })
         return pd.DataFrame(rows)
-    if not TRANSACTIONS_CSV.exists():
-        return pd.DataFrame()
     return pd.read_csv(TRANSACTIONS_CSV)
 
 
@@ -153,10 +155,10 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
     prices = load_ticker_prices(tickers, start=start, end=end)
     if prices.empty:
         return pd.DataFrame()
-    last_valid = prices.apply(lambda s: s.dropna().index.max() if s.dropna().size else pd.NaT)
-    if last_valid.notna().any():
-        common_end = last_valid.min()
-        prices = prices.loc[:common_end]
+    if prices.empty:
+        return pd.DataFrame()
+    prices = prices.sort_index()
+    prices = prices.ffill()
     idx = prices.index
     holdings = {}
     cash = pd.Series(ALGORY_INITIAL_CASH, index=idx)
@@ -200,6 +202,62 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
     return out
 
 
+def _extend_holdings_to_present(holdings_ts: pd.DataFrame) -> pd.DataFrame:
+    if holdings_ts.empty:
+        return holdings_ts
+
+    last_date = holdings_ts.index.max()
+    today = pd.Timestamp.today().normalize()
+    if last_date >= today:
+        return holdings_ts
+
+    mv_cols = [c for c in holdings_ts.columns if c.startswith("MV_")]
+    if not mv_cols:
+        return holdings_ts
+
+    tickers = [c.replace("MV_", "") for c in mv_cols]
+    from analytics_macro import load_ticker_prices
+    prices = load_ticker_prices(tickers, start=last_date - pd.Timedelta(days=10), end=today)
+    if prices.empty:
+        return holdings_ts
+    prices = prices.sort_index().ffill()
+
+    last_prices = {}
+    for t in tickers:
+        series = prices[t].dropna()
+        last_prices[t] = series.loc[:last_date].iloc[-1] if not series.loc[:last_date].empty else np.nan
+
+    shares = {}
+    last_row = holdings_ts.loc[last_date, mv_cols]
+    for col in mv_cols:
+        ticker = col.replace("MV_", "")
+        price = last_prices.get(ticker, np.nan)
+        mv = float(last_row.get(col, 0.0))
+        shares[ticker] = mv / price if pd.notna(price) and price != 0 else 0.0
+
+    future_idx = prices.index[prices.index > last_date]
+    if future_idx.empty:
+        return holdings_ts
+
+    future_prices = prices.loc[future_idx, tickers]
+    mv_future = pd.DataFrame({f"MV_{t}": future_prices[t] * shares[t] for t in tickers}, index=future_idx)
+    future = pd.DataFrame(index=future_idx)
+    for col in mv_cols:
+        future[col] = mv_future[col]
+    future["portfolio_value"] = mv_future.sum(axis=1)
+    for col in ["cash_balance", "cash_balance_clean", "cumulative_deposits"]:
+        if col in holdings_ts.columns:
+            future[col] = float(holdings_ts.loc[last_date, col])
+    if "total_value" in holdings_ts.columns:
+        cash_bal = future.get("cash_balance", 0.0)
+        future["total_value"] = future["portfolio_value"] + cash_bal
+    if "total_value_clean" in holdings_ts.columns:
+        cash_clean = future.get("cash_balance_clean", future.get("cash_balance", 0.0))
+        future["total_value_clean"] = future["portfolio_value"] + cash_clean
+
+    return pd.concat([holdings_ts, future], axis=0).sort_index()
+
+
 def build_portfolio_timeseries(freq: str = "Daily", portfolio_id: str = "schwab") -> pd.DataFrame:
     if portfolio_id == "algory":
         holdings_ts = _build_hypothetical_timeseries()
@@ -207,6 +265,8 @@ def build_portfolio_timeseries(freq: str = "Daily", portfolio_id: str = "schwab"
         holdings_ts = load_holdings_timeseries()
     if holdings_ts.empty:
         return holdings_ts
+    if portfolio_id != "algory":
+        holdings_ts = _extend_holdings_to_present(holdings_ts)
 
     index = holdings_ts.index
     rf_returns = load_risk_free_returns(index, freq="Daily")
