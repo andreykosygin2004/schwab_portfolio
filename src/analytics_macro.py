@@ -166,10 +166,18 @@ def load_ticker_prices(
             except Exception:
                 series = None
             if series is not None and not series.empty:
-                if age_days <= cache_days or cache_days <= 0:
-                    cached[ticker] = series
-                else:
-                    cached[ticker] = series
+                cached[ticker] = series
+                # Determine if cache coverage is insufficient for requested range.
+                need_start = pd.to_datetime(start) if start else None
+                need_end = pd.to_datetime(end) if end else None
+                cached_min = series.index.min()
+                cached_max = series.index.max()
+                needs_backfill = need_start is not None and need_start < cached_min
+                needs_forward = need_end is not None and need_end > cached_max
+                if cache_days > 0 and age_days > cache_days:
+                    # Refresh forward data when cache is stale.
+                    needs_forward = True if need_end is None else needs_forward
+                if needs_backfill or needs_forward:
                     missing.append(ticker)
             else:
                 missing.append(ticker)
@@ -177,12 +185,35 @@ def load_ticker_prices(
             missing.append(ticker)
 
     if missing:
+        fetch_start = start
+        fetch_end = end
+        # If any cached series needs backfill/forward-fill, expand the fetch window.
+        if cached:
+            cached_mins = []
+            cached_maxs = []
+            for ticker in missing:
+                series = cached.get(ticker)
+                if series is not None and not series.empty:
+                    cached_mins.append(series.index.min())
+                    cached_maxs.append(series.index.max())
+            if cached_mins:
+                min_cached = min(cached_mins)
+                if start and pd.to_datetime(start) < min_cached:
+                    fetch_start = start
+                else:
+                    fetch_start = min_cached
+            if cached_maxs:
+                max_cached = max(cached_maxs)
+                if end and pd.to_datetime(end) > max_cached:
+                    fetch_end = end
+                else:
+                    fetch_end = end or dt.date.today()
         try:
             import yfinance as yf  # local import to avoid hard dependency in tests
             df = yf.download(
                 missing,
-                start=start,
-                end=end,
+                start=fetch_start,
+                end=fetch_end,
                 auto_adjust=True,
                 progress=False,
             )["Close"]
@@ -202,8 +233,14 @@ def load_ticker_prices(
                 warnings.warn(f"[WARN] No data for {ticker}; skipping.")
                 continue
             cache_path = CACHE_DIR / f"{ticker}.csv"
-            series.to_frame("Close").to_csv(cache_path)
-            cached[ticker] = series
+            if ticker in cached and not cached[ticker].empty:
+                merged = pd.concat([cached[ticker], series]).sort_index()
+                merged = merged[~merged.index.duplicated(keep="last")]
+                cached[ticker] = merged
+                merged.to_frame("Close").to_csv(cache_path)
+            else:
+                series.to_frame("Close").to_csv(cache_path)
+                cached[ticker] = series
 
     if not cached:
         return pd.DataFrame()

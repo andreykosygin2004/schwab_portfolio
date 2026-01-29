@@ -13,7 +13,7 @@ HOLDINGS_TS = DATA_DIR / "holdings_timeseries.csv"
 TREASURY_CSV = DATA_DIR / "treasury.csv"
 HYPOTHETICAL_PORTFOLIO = DATA_DIR / "hypothetical_portfolio.csv"
 TRANSACTIONS_CSV = DATA_DIR / "schwab_transactions.csv"
-ALGORY_INITIAL_CASH = 126_406.0
+ALGORY_INITIAL_CASH = 103_000.0
 SYMBOL_ALIAS = {
     "35952H601": "FCEL",
 }

@@ -12,18 +12,20 @@ from analytics.portfolio import (
     risk_free_warning,
 )
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
+from analytics_macro import load_ticker_prices
 
 dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
 
 # -----------------------
 # Load data
 # -----------------------
-HOLDINGS_TS = "data/holdings_timeseries.csv"
-BENCHMARKS_CSV = "data/benchmark_prices.csv"
-
 holdings_ts = load_holdings_timeseries()
 portfolio_ts = build_portfolio_timeseries()
-bench = pd.read_csv(BENCHMARKS_CSV, parse_dates=["Date"], index_col="Date").sort_index()
+BENCHMARK_MAP = {
+    "SPY": "SPY",
+    "QQQ": "QQQ",
+}
+bench = load_ticker_prices(list(BENCHMARK_MAP.values())).rename(columns={v: k for k, v in BENCHMARK_MAP.items()})
 
 # Optional risk-free (10y). If not present, use 0.
 # If you later save treasury_10y as CSV, set this path to that file.
