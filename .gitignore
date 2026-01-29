@@ -38,3 +38,7 @@ credentials*.json
 
 # Project caches/artifacts
 data/macro_cache/
+data/schwab_transactions.csv
+data/holdings_timeseries.csv
+data/stock_splits.csv
+data/portfolio_summary.csv
