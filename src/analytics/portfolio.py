@@ -13,7 +13,7 @@ HOLDINGS_TS = DATA_DIR / "holdings_timeseries.csv"
 TREASURY_CSV = DATA_DIR / "treasury.csv"
 HYPOTHETICAL_PORTFOLIO = DATA_DIR / "hypothetical_portfolio.csv"
 TRANSACTIONS_CSV = DATA_DIR / "schwab_transactions.csv"
-ALGORY_INITIAL_CASH = 100_000.0
+ALGORY_INITIAL_CASH = 126_406.0
 SYMBOL_ALIAS = {
     "35952H601": "FCEL",
 }
@@ -38,6 +38,9 @@ def load_holdings_timeseries(portfolio_id: str = "schwab") -> pd.DataFrame:
                 rename_map[col] = f"MV_{alias}"
     if rename_map:
         df = df.rename(columns=rename_map)
+        # Drop any duplicate columns introduced by aliasing (keep canonical).
+        if df.columns.duplicated().any():
+            df = df.loc[:, ~df.columns.duplicated()]
     return df
 
 
@@ -46,10 +49,21 @@ def load_transactions(portfolio_id: str = "schwab") -> pd.DataFrame:
         portfolio = _load_hypothetical_portfolio()
         if portfolio.empty:
             return pd.DataFrame()
+        from analytics_macro import load_ticker_prices
+        start = portfolio["entry_date"].min() - pd.Timedelta(days=7)
+        end = pd.Timestamp.today().normalize()
+        tickers = portfolio["symbol"].unique().tolist()
+        prices = load_ticker_prices(tickers, start=start, end=end).ffill()
         rows = []
         for _, row in portfolio.iterrows():
             shares = float(row["shares"])
-            price = float(row["entry_price"]) if pd.notna(row.get("entry_price")) else np.nan
+            entry_date = row["entry_date"]
+            price = np.nan
+            if row["symbol"] in prices.columns:
+                series = prices[row["symbol"]].dropna()
+                trade_dates = series.index[series.index >= entry_date]
+                if not trade_dates.empty:
+                    price = float(series.loc[trade_dates[0]])
             amount = -shares * price if pd.notna(price) else np.nan
             rows.append({
                 "Date": row["entry_date"].date().isoformat(),
@@ -192,14 +206,6 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
         hist_price = prices.loc[trade_date, symbol]
         if pd.notna(hist_price):
             cash.loc[trade_date:] -= shares * float(hist_price)
-        entry_price = float(row["entry_price"]) if pd.notna(row.get("entry_price")) else np.nan
-        if pd.notna(entry_price) and pd.notna(hist_price) and hist_price != 0:
-            diff = abs(entry_price - hist_price) / hist_price
-            if diff > 0.2:
-                warnings.warn(
-                    f"[WARN] Algory entry price for {symbol} on {trade_date.date()} "
-                    f"differs from adjusted close {hist_price:.2f} by {diff:.0%}."
-                )
     shares_df = pd.DataFrame(holdings).reindex(idx).fillna(0.0)
     mv_df = shares_df * prices.reindex(shares_df.index).fillna(0.0)
     out = pd.DataFrame(index=idx)

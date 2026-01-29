@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import dash
 from dash import Dash, html
 import dash_bootstrap_components as dbc
@@ -5,6 +7,8 @@ import dash_bootstrap_components as dbc
 # Initialize app
 app = Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = "Schwab Portfolio Dashboard"
+DATA_DIR = Path("data")
+HAS_LOCAL_PORTFOLIO = (DATA_DIR / "schwab_transactions.csv").exists()
 
 NAV_ORDER = [
     "/",
@@ -65,11 +69,15 @@ app.layout = dbc.Container([
             html.Label("Portfolio", style={"fontWeight": "600", "marginRight": "8px"}),
             dbc.Select(
                 id="portfolio-selector",
-                options=[
-                    {"label": "My Portfolio", "value": "schwab"},
-                    {"label": "Algory Portfolio", "value": "algory"},
-                ],
-                value="schwab",
+                options=(
+                    [
+                        {"label": "My Portfolio", "value": "schwab"},
+                        {"label": "Algory Portfolio", "value": "algory"},
+                    ]
+                    if HAS_LOCAL_PORTFOLIO
+                    else [{"label": "Algory Portfolio", "value": "algory"}]
+                ),
+                value="schwab" if HAS_LOCAL_PORTFOLIO else "algory",
                 style={"maxWidth": "240px"},
             ),
         ],
