@@ -14,6 +14,9 @@ TREASURY_CSV = DATA_DIR / "treasury.csv"
 HYPOTHETICAL_PORTFOLIO = DATA_DIR / "hypothetical_portfolio.csv"
 TRANSACTIONS_CSV = DATA_DIR / "schwab_transactions.csv"
 ALGORY_INITIAL_CASH = 100_000.0
+SYMBOL_ALIAS = {
+    "35952H601": "FCEL",
+}
 
 _RF_WARNING = None
 
@@ -25,7 +28,17 @@ def load_holdings_timeseries(portfolio_id: str = "schwab") -> pd.DataFrame:
         return _build_hypothetical_timeseries()
     if not HOLDINGS_TS.exists():
         return pd.DataFrame()
-    return pd.read_csv(HOLDINGS_TS, parse_dates=["Date"], index_col="Date").sort_index()
+    df = pd.read_csv(HOLDINGS_TS, parse_dates=["Date"], index_col="Date").sort_index()
+    rename_map = {}
+    for col in df.columns:
+        if col.startswith("MV_"):
+            raw = col.replace("MV_", "")
+            alias = SYMBOL_ALIAS.get(raw)
+            if alias:
+                rename_map[col] = f"MV_{alias}"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    return df
 
 
 def load_transactions(portfolio_id: str = "schwab") -> pd.DataFrame:
