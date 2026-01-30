@@ -28,9 +28,6 @@ Then open http://127.0.0.1:8050 in your browser.
 ## Data notes
 This project uses public market data via yfinance and FRED.
 
-Portfolio holdings are loaded from a local CSV file.  
-No personal brokerage data is included in this repository.
-
 By default, the app runs using a hypothetical sample portfolio
 (`data/hypothetical_portfolio.csv`).
 
