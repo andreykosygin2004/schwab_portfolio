@@ -117,7 +117,7 @@ layout = html.Div([
                 ], xs=12, md=6),
                 dbc.Col([
                     html.Label("Notional ($)"),
-                    dcc.Input(id="rotation-notional", type="number", value=10000, min=10000, step=1000),
+                    dcc.Input(id="rotation-notional", type="number", value=100000, min=10000, step=1000),
                 ], xs=12, md=3),
                 dbc.Col([
                     html.Label("Options"),
@@ -189,7 +189,7 @@ layout = html.Div([
                             {"label": "My Portfolio", "value": "schwab"},
                             {"label": "Algory", "value": "algory"},
                         ],
-                        value="schwab",
+                        value="algory",
                         clearable=False,
                     ),
                 ], xs=12, md=3),
