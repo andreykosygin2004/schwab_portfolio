@@ -10,7 +10,7 @@ Personal investing dashboard built with Dash (Plotly). The app combines portfoli
 - Factor attribution and regime analysis.
 - Factor rotation sleeve (monthly, blended weights) and trade blotter.
 
-Note: The Alpha Holdings Tracker page remains a work-in-progress; logic and labels are being refined.
+Note: The Alpha Holdings Tracker page remains a work-in-progress; logic and labels are being refined. To provide more representative analytics, select most pages to begin on 08/01/2024, when portfolio activity and diversification became more meaningful.
 
 ## Setup
 ```bash
