@@ -25,6 +25,7 @@ Personal investing dashboard built with Dash (Plotly). The app combines portfoli
 Note: The Alpha Holdings Tracker page remains a work-in-progress; logic and labels are being refined. To provide more representative analytics, select most pages to begin on 08/01/2024, when portfolio activity and diversification became more meaningful.
 
 ## Setup
+Clone repo: https://github.com/andreykosygin2004/schwab_portfolio.git
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
