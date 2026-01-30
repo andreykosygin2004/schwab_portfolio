@@ -2,6 +2,18 @@
 
 Personal investing dashboard built with Dash (Plotly). The app combines portfolio performance, benchmark comparisons, macro drivers, regimes, and attribution into a single, interview-ready interface.
 
+## Screenshots
+
+<img width="1707" height="815" alt="Screenshot 2026-01-29 at 7 50 57 PM" src="https://github.com/user-attachments/assets/60f6130f-5687-4d4a-b4e2-5f5c3ef16310" />
+
+<img width="1710" height="894" alt="Screenshot 2026-01-29 at 7 53 02 PM" src="https://github.com/user-attachments/assets/ec3f6ded-8562-414a-a1a7-949da1cc3f5d" />
+
+<img width="1710" height="944" alt="Screenshot 2026-01-29 at 7 53 50 PM" src="https://github.com/user-attachments/assets/20a69371-e2f9-4005-a805-5677efb11de5" />
+
+<img width="1709" height="916" alt="Screenshot 2026-01-29 at 8 00 41 PM" src="https://github.com/user-attachments/assets/dddcf7bd-c82f-4502-925a-6cb65f74fb6f" />
+
+<img width="1710" height="952" alt="Screenshot 2026-01-29 at 7 57 39 PM" src="https://github.com/user-attachments/assets/2a6f05a1-4b83-48a7-9753-60eb3c46e6ef" />
+
 ## Highlights
 - Portfolio overview with clean cash-adjusted totals and holdings time series.
 - Benchmark comparisons (cumulative returns, excess return, CAPM diagnostics).
