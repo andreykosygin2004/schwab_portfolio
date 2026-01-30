@@ -178,7 +178,7 @@ def update_attribution(start_date, end_date, freq, top_n, portfolio_id):
     else:
         price_hist = pd.read_csv("data/historical_prices.csv", parse_dates=["Date"]).set_index("Date").sort_index()
     transactions = load_transactions(portfolio_id or "schwab")
-    splits = pd.read_csv("data/stock_splits.csv")
+    splits = None
 
     df = holdings_ts.loc[start:end]
     if df.empty:

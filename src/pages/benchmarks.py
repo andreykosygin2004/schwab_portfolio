@@ -25,7 +25,14 @@ BENCHMARK_MAP = {
     "SPY": "SPY",
     "QQQ": "QQQ",
 }
-bench = load_ticker_prices(list(BENCHMARK_MAP.values())).rename(columns={v: k for k, v in BENCHMARK_MAP.items()})
+bench_start = None
+if not holdings_ts.empty:
+    bench_start = holdings_ts.index.min()
+bench = load_ticker_prices(
+    list(BENCHMARK_MAP.values()),
+    start=bench_start,
+    end=pd.Timestamp.today().normalize(),
+).rename(columns={v: k for k, v in BENCHMARK_MAP.items()})
 
 # Optional risk-free (10y). If not present, use 0.
 # If you later save treasury_10y as CSV, set this path to that file.
