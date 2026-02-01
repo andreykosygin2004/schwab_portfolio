@@ -6,7 +6,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-from analytics_macro import (
+from analytics.macro_data import (
     compute_returns,
     rolling_vol,
     rolling_corr,

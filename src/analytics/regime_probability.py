@@ -16,7 +16,7 @@ from analytics.regimes import (
     load_proxy_prices,
     returns_from_prices,
 )
-from analytics_macro import clear_price_cache
+from analytics.macro_data import clear_price_cache
 
 
 PROXIES = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]

@@ -12,7 +12,7 @@ from analytics.portfolio import (
     load_holdings_timeseries,
     load_portfolio_series,
 )
-from analytics_macro import compute_returns, load_ticker_prices
+from analytics.macro_data import compute_returns, load_ticker_prices
 from utils.alpha_decompose import (
     compute_holding_alpha_contrib,
     compute_portfolio_explained_residual,

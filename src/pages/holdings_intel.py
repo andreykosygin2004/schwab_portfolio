@@ -13,7 +13,7 @@ from analytics.holdings_intel import (
 from analytics.risk import compute_returns
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from analytics.portfolio import get_portfolio_date_bounds, load_holdings_timeseries, load_portfolio_series
-from analytics_macro import load_ticker_prices
+from analytics.macro_data import load_ticker_prices
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/holdings-intel", name="Holdings Risk")

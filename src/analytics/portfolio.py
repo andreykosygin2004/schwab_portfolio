@@ -49,7 +49,7 @@ def load_transactions(portfolio_id: str = "schwab") -> pd.DataFrame:
         portfolio = _load_hypothetical_portfolio()
         if portfolio.empty:
             return pd.DataFrame()
-        from analytics_macro import load_ticker_prices
+        from analytics.macro_data import load_ticker_prices
         start = portfolio["entry_date"].min() - pd.Timedelta(days=7)
         end = pd.Timestamp.today().normalize()
         tickers = portfolio["symbol"].unique().tolist()
@@ -125,7 +125,7 @@ def load_risk_free_returns(index: pd.DatetimeIndex, freq: str) -> pd.Series:
         _set_rf_warning(None)
         return rf_return
 
-    from analytics_macro import load_ticker_prices
+    from analytics.macro_data import load_ticker_prices
     proxies = ["BIL", "SHV"]
     proxy_prices = load_ticker_prices(proxies, start=index.min(), end=index.max())
     if not proxy_prices.empty:
@@ -178,7 +178,7 @@ def _build_hypothetical_timeseries() -> pd.DataFrame:
     tickers = portfolio["symbol"].unique().tolist()
     start = portfolio["entry_date"].min() - pd.Timedelta(days=7)
     end = pd.Timestamp.today().normalize()
-    from analytics_macro import load_ticker_prices
+    from analytics.macro_data import load_ticker_prices
     prices = load_ticker_prices(tickers, start=start, end=end)
     if prices.empty:
         return pd.DataFrame()
@@ -235,7 +235,7 @@ def _extend_holdings_to_present(holdings_ts: pd.DataFrame) -> pd.DataFrame:
         return holdings_ts
 
     tickers = [c.replace("MV_", "") for c in mv_cols]
-    from analytics_macro import load_ticker_prices
+    from analytics.macro_data import load_ticker_prices
     prices = load_ticker_prices(tickers, start=last_date - pd.Timedelta(days=10), end=today)
     if prices.empty:
         return holdings_ts

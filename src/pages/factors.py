@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 from analytics.factors import align_returns, factor_contributions, fit_ols, rolling_multifactor
 from analytics.risk import compute_returns
-from analytics_macro import load_portfolio_series, load_ticker_prices
+from analytics.macro_data import load_portfolio_series, load_ticker_prices
 from analytics.portfolio import get_portfolio_date_bounds
 from analytics.portfolio import risk_free_warning
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS

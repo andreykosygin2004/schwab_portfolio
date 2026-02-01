@@ -16,7 +16,7 @@ from analytics.risk import (
     var_cvar,
 )
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
-from analytics_macro import load_portfolio_series, load_ticker_prices
+from analytics.macro_data import load_portfolio_series, load_ticker_prices
 from analytics.portfolio import get_portfolio_date_bounds, risk_free_warning
 from viz.plots import empty_figure
 

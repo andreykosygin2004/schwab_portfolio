@@ -6,7 +6,7 @@ import pandas as pd
 
 from analytics.constants import ANALYSIS_END, ANALYSIS_START
 from analytics.risk import compute_returns, drawdown_series
-from analytics_macro import compute_returns, load_ticker_prices
+from analytics.macro_data import compute_returns, load_ticker_prices
 
 
 PROXY_TICKERS = ["SPY", "QQQ", "HYG", "TLT", "USO", "UUP", "GLD", "TIP"]

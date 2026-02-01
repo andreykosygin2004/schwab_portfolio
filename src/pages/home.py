@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from analytics import compute_performance_metrics
+from data_creation import compute_performance_metrics
 from analytics.portfolio import (
     build_portfolio_timeseries,
     load_holdings_timeseries,

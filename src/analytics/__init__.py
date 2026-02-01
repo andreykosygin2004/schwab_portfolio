@@ -14,7 +14,7 @@ import importlib.util
 from pathlib import Path
 
 
-_ANALYTICS_PATH = Path(__file__).resolve().parents[1] / "analytics.py"
+_ANALYTICS_PATH = Path(__file__).resolve().parents[1] / "data_creation.py"
 _spec = importlib.util.spec_from_file_location("analytics_module", _ANALYTICS_PATH)
 _analytics = importlib.util.module_from_spec(_spec) if _spec else None
 if _spec and _spec.loader:

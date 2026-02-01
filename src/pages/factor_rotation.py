@@ -10,7 +10,7 @@ from analytics.constants import DEFAULT_START_DATE_ANALYSIS
 from analytics.common import annualize_return_cagr, annualize_vol
 from analytics.portfolio import get_portfolio_date_bounds, load_portfolio_series
 from analytics.regimes import compute_regime_features, label_regimes
-from analytics_macro import load_ticker_prices
+from analytics.macro_data import load_ticker_prices
 from viz.plots import empty_figure
 from strategies.factor_rotation import (
     RotationParams,

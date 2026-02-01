@@ -12,7 +12,7 @@ from analytics.portfolio import (
     risk_free_warning,
 )
 from analytics.constants import DEFAULT_START_DATE_ANALYSIS
-from analytics_macro import load_ticker_prices
+from analytics.macro_data import load_ticker_prices
 
 dash.register_page(__name__, path="/benchmarks", name="Benchmarks")
 

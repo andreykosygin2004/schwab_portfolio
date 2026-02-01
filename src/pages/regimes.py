@@ -16,7 +16,7 @@ from analytics.overlay import (
 )
 from analytics.risk import drawdown_series, max_drawdown
 from analytics.common import annualize_return_cagr, annualize_vol
-from analytics_macro import load_ticker_prices
+from analytics.macro_data import load_ticker_prices
 from viz.plots import empty_figure
 
 dash.register_page(__name__, path="/regimes", name="Regime Analysis")

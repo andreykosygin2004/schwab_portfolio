@@ -14,7 +14,7 @@ from analytics.attribution import (
 from analytics.constants import ANALYSIS_END, DEFAULT_START_DATE_ANALYSIS
 from analytics.factors import fit_ols
 from analytics.regimes import returns_from_prices
-from analytics_macro import load_ticker_prices
+from analytics.macro_data import load_ticker_prices
 from analytics.portfolio import (
     build_portfolio_timeseries,
     get_portfolio_date_bounds,
