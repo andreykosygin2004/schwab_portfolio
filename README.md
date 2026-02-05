@@ -12,7 +12,7 @@ Personal investing dashboard built with Dash (Plotly). The app combines portfoli
 
 <img width="1709" height="916" alt="Screenshot 2026-01-29 at 8 00 41 PM" src="https://github.com/user-attachments/assets/dddcf7bd-c82f-4502-925a-6cb65f74fb6f" />
 
-<img width="1710" height="952" alt="Screenshot 2026-01-29 at 7 57 39 PM" src="https://github.com/user-attachments/assets/2a6f05a1-4b83-48a7-9753-60eb3c46e6ef" />
+<img width="1710" height="749" alt="Screenshot 2026-02-05 at 10 01 43 AM" src="https://github.com/user-attachments/assets/013d22ed-e9cd-46cd-97ed-ada837708885" />
 
 ## Highlights
 - Portfolio overview with clean cash-adjusted totals and holdings time series.
